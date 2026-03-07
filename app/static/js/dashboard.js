@@ -185,17 +185,29 @@ function renderResults(data) {
   document.getElementById("overview").scrollIntoView({ behavior: "smooth" });
 }
 
+// ---------- Fetch helper with auth-redirect handling ----------
+async function apiFetch(url, options = {}) {
+  const resp = await fetch(url, options);
+  // If the server returns 401 (unauthenticated), redirect to login
+  if (resp.status === 401) {
+    window.location.href = "/login?next=" + encodeURIComponent(window.location.pathname);
+    return null;
+  }
+  return resp;
+}
+
 // ---------- Call backend /api/analyze ----------
 async function runAnalysis(body, headers = {}) {
   const spinner = document.getElementById("spinner");
   spinner.classList.remove("hidden");
 
   try {
-    const resp = await fetch("/api/analyze", {
+    const resp = await apiFetch("/api/analyze", {
       method: "POST",
       headers,
       body,
     });
+    if (!resp) return;  // auth redirect in progress
     const data = await resp.json();
     if (data.error) {
       alert("Analysis error: " + data.error);
@@ -250,13 +262,36 @@ document.getElementById("tableSearch").addEventListener("input", function () {
   });
 });
 
+// ---------- Global search (topbar) syncs to table search ----------
+const globalSearch = document.getElementById("globalSearch");
+if (globalSearch) {
+  globalSearch.addEventListener("input", function () {
+    const tableSearch = document.getElementById("tableSearch");
+    if (tableSearch) {
+      tableSearch.value = this.value;
+      tableSearch.dispatchEvent(new Event("input"));
+    }
+  });
+}
+
+// ---------- Sidebar toggle ----------
+const sidebarToggle = document.getElementById("sidebarToggle");
+if (sidebarToggle) {
+  sidebarToggle.addEventListener("click", function () {
+    document.getElementById("sidebar").classList.toggle("collapsed");
+    document.getElementById("workbenchMain").classList.toggle("sidebar-collapsed");
+  });
+}
+
 // ---------- Auto-load results if they already exist ----------
 window.addEventListener("DOMContentLoaded", async () => {
   try {
-    const resp = await fetch("/api/results");
+    const resp = await apiFetch("/api/results");
+    if (!resp) return;
     if (resp.ok) {
       const data = await resp.json();
       if (!data.error) renderResults(data);
     }
   } catch (_) { /* server not ready yet */ }
 });
+

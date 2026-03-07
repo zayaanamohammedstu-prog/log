@@ -14,8 +14,9 @@ anomalous behaviour, and present a prioritised risk dashboard to IT auditors.
 | Feature engineering | Pandas — per-IP/hour aggregations |
 | Anomaly detection | Scikit-learn **Isolation Forest** (+ StandardScaler) |
 | Backend API | **Flask** REST API |
-| Frontend | HTML / CSS / **Chart.js** dashboard |
-| Tests | **pytest** (45 unit + integration tests) |
+| Authentication | **Flask-Login** + session-based auth, SQLite user store |
+| Frontend | HTML / CSS / **Chart.js** — Audit Workbench shell |
+| Tests | **pytest** (59 unit + integration tests) |
 
 Detected anomaly patterns include:
 - High-volume brute-force login attempts
@@ -31,7 +32,12 @@ Detected anomaly patterns include:
 logguard/
 ├── app/
 │   ├── app.py                 # Flask application & REST API
-│   ├── templates/index.html   # Dashboard (HTML/CSS/JS)
+│   ├── db.py                  # SQLite data access layer (user CRUD)
+│   ├── models.py              # Flask-Login User model
+│   ├── templates/
+│   │   ├── index.html         # Audit Workbench dashboard shell
+│   │   ├── login.html         # Login page
+│   │   └── admin.html         # Admin page
 │   └── static/
 │       ├── css/style.css
 │       └── js/dashboard.js
@@ -46,7 +52,8 @@ logguard/
 │   ├── test_parser.py
 │   ├── test_features.py
 │   ├── test_model.py
-│   └── test_app.py
+│   ├── test_app.py
+│   └── test_auth.py           # Authentication & authorisation tests
 └── requirements.txt
 ```
 
@@ -62,25 +69,69 @@ cd log
 pip install -r requirements.txt
 ```
 
-### 2. Run the application
+### 2. Set up the first admin account
+
+On the first run, LogGuard creates the admin user from environment variables.
+Set these **before** starting the server:
+
+```bash
+export LOGGUARD_ADMIN_USERNAME=admin
+export LOGGUARD_ADMIN_PASSWORD=your-strong-password
+export LOGGUARD_SECRET_KEY=your-random-secret-key   # required in production
+```
+
+> **Windows (PowerShell):**
+> ```powershell
+> $env:LOGGUARD_ADMIN_USERNAME="admin"
+> $env:LOGGUARD_ADMIN_PASSWORD="your-strong-password"
+> $env:LOGGUARD_SECRET_KEY="your-random-secret-key"
+> ```
+
+If these variables are not set when no users exist, the app starts but logs a
+warning and the login page shows a setup notice — no user will be created.
+
+### 3. Run the application
 
 ```bash
 python -m flask --app app/app.py run
 # Open http://localhost:5000 in your browser
 ```
 
-### 3. Analyse logs
+You will be redirected to the login page. Sign in with the credentials you set
+in step 2.
+
+### 4. Analyse logs
 
 - Click **"Analyse sample logs"** to run the bundled 760-entry demo dataset.
 - Or click **"Choose File"** / drag-and-drop to upload your own Apache CLF log.
 
 ---
 
+## Authentication
+
+| Environment Variable | Description |
+|---|---|
+| `LOGGUARD_ADMIN_USERNAME` | Username for the bootstrap admin account |
+| `LOGGUARD_ADMIN_PASSWORD` | Password for the bootstrap admin account (hashed with Werkzeug) |
+| `LOGGUARD_SECRET_KEY` | Flask session secret key (use a long random string in production) |
+
+- The SQLite database (`logguard.db`) is stored in Flask's `instance/` folder and is excluded from version control.
+- Passwords are never stored in plaintext — Werkzeug's `pbkdf2:sha256` is used.
+- Roles: `admin`, `auditor`, `viewer`. The `/admin` page is restricted to `admin` role only.
+
+---
+
 ## API Endpoints
+
+All API endpoints require authentication. Unauthenticated requests receive a
+JSON `401` response (not an HTML redirect).
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/` | Dashboard UI |
+| `GET` | `/` | Audit Workbench dashboard (login required) |
+| `GET` | `POST` `/login` | Login page / authenticate |
+| `GET` | `POST` `/logout` | End session |
+| `GET` | `/admin` | Admin panel (admin role required) |
 | `GET` | `/api/status` | Health-check + model status |
 | `POST` | `/api/analyze` | Analyse log data; returns JSON results |
 | `GET` | `/api/results` | Return cached results from last analysis |
@@ -98,7 +149,7 @@ python -m flask --app app/app.py run
 pytest tests/ -v
 ```
 
-All 45 tests should pass.
+All 59 tests should pass.
 
 ---
 

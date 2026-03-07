@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LogGuard — Admin</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body class="workbench-page">
+
+<!-- =================== SIDEBAR =================== -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <span class="shield">🛡</span>
+    <div>
+      <div class="sidebar-brand-name">LogGuard</div>
+      <div class="sidebar-brand-sub">Audit Workbench</div>
+    </div>
+  </div>
+  <ul class="sidebar-nav">
+    <li><a href="{{ url_for('index') }}"><span class="nav-icon">📊</span> Overview</a></li>
+    <li><a href="{{ url_for('index') }}#anomalies"><span class="nav-icon">🔍</span> Anomaly Explorer</a></li>
+    <li><a href="{{ url_for('index') }}#charts"><span class="nav-icon">📈</span> Evidence &amp; Reports</a></li>
+    {% if user.is_admin %}
+    <li class="active"><a href="{{ url_for('admin') }}"><span class="nav-icon">⚙️</span> Admin</a></li>
+    {% endif %}
+  </ul>
+</nav>
+
+<!-- =================== MAIN =================== -->
+<div class="workbench-main">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">☰</button>
+      <h1 class="topbar-title">Administration</h1>
+    </div>
+    <div class="topbar-right">
+      <div class="user-menu">
+        <span class="user-name">{{ user.username }}</span>
+        <span class="user-role role-{{ user.role }}">{{ user.role }}</span>
+        <form method="POST" action="{{ url_for('logout') }}" style="display:inline;">
+          <button type="submit" class="btn btn-secondary btn-sm">Sign Out</button>
+        </form>
+      </div>
+    </div>
+  </header>
+
+  <!-- Content -->
+  <main class="content-area">
+
+    {% if forbidden %}
+    <!-- Access denied -->
+    <div class="admin-forbidden">
+      <div class="forbidden-icon">🔒</div>
+      <h2>Access Denied</h2>
+      <p>This page is restricted to <strong>admin</strong> users only.</p>
+      <p>Your current role: <span class="user-role role-{{ user.role }}">{{ user.role }}</span></p>
+      <a href="{{ url_for('index') }}" class="btn btn-primary" style="margin-top:16px;">Back to Dashboard</a>
+    </div>
+
+    {% else %}
+    <!-- Admin panel -->
+    <div class="admin-panel">
+      <div class="section-header">
+        <h2>System Administration</h2>
+        <p class="section-desc">LogGuard Audit Workbench — system overview</p>
+      </div>
+
+      <div class="cards" style="margin-top:24px;">
+        <div class="card card-ok">
+          <div class="card-value">{{ user_count }}</div>
+          <div class="card-label">Registered Users</div>
+        </div>
+        <div class="card">
+          <div class="card-value">v1.0</div>
+          <div class="card-label">Workbench Version</div>
+        </div>
+        <div class="card card-warn">
+          <div class="card-value">SQLite</div>
+          <div class="card-label">Database Engine</div>
+        </div>
+      </div>
+
+      <div class="admin-info-card" style="margin-top:32px;">
+        <h3>Current Session</h3>
+        <table class="info-table">
+          <tr><td>Username</td><td><strong>{{ user.username }}</strong></td></tr>
+          <tr><td>Role</td><td><span class="user-role role-{{ user.role }}">{{ user.role }}</span></td></tr>
+          <tr><td>User ID</td><td>{{ user.id }}</td></tr>
+        </table>
+      </div>
+
+      <div class="admin-info-card" style="margin-top:24px;">
+        <h3>Environment Notes</h3>
+        <ul class="admin-notes">
+          <li>Database is stored in the Flask <code>instance/</code> folder (excluded from version control).</li>
+          <li>To create additional users, set <code>LOGGUARD_ADMIN_USERNAME</code> /
+              <code>LOGGUARD_ADMIN_PASSWORD</code> environment variables and restart with an empty DB,
+              or use the Python shell to call <code>app.db.create_user()</code>.</li>
+          <li>Set <code>LOGGUARD_SECRET_KEY</code> to a strong random value in production.</li>
+        </ul>
+      </div>
+    </div>
+    {% endif %}
+
+  </main>
+</div>
+
+<script>
+  document.getElementById("sidebarToggle").addEventListener("click", function () {
+    document.getElementById("sidebar").classList.toggle("collapsed");
+    document.querySelector(".workbench-main").classList.toggle("sidebar-collapsed");
+  });
+</script>
+</body>
+</html>

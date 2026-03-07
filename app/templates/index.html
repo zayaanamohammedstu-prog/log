@@ -3,142 +3,165 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LogGuard — IT Audit Anomaly Detection</title>
+  <title>LogGuard — Audit Workbench</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
   <!-- Chart.js via CDN (no build step required) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
-<body>
+<body class="workbench-page">
 
-<!-- ===================== HEADER ===================== -->
-<header class="header">
-  <div class="header-inner">
-    <div class="brand">
-      <span class="shield">🛡</span>
-      <span class="brand-name">LogGuard</span>
-      <span class="brand-sub">IT Audit Anomaly Detection</span>
-    </div>
-    <nav class="nav">
-      <a href="#overview">Overview</a>
-      <a href="#anomalies">Anomalies</a>
-      <a href="#charts">Charts</a>
-    </nav>
-  </div>
-</header>
-
-<!-- ===================== HERO ===================== -->
-<section class="hero">
-  <div class="hero-inner">
-    <h1>Intelligent Log Analysis</h1>
-    <p>Upload your Apache / CLF server logs and let the Isolation Forest model
-       flag suspicious activity before it becomes an incident.</p>
-
-    <div class="upload-box" id="uploadBox">
-      <p>📂 Drop a log file here, or</p>
-      <label class="btn btn-primary" for="fileInput">Choose File</label>
-      <input type="file" id="fileInput" accept=".log,.txt" />
-      <hr />
-      <button class="btn btn-secondary" id="btnSample">Analyse sample logs</button>
-    </div>
-
-    <div id="spinner" class="spinner hidden">⚙ Analysing…</div>
-  </div>
-</section>
-
-<!-- ===================== OVERVIEW CARDS ===================== -->
-<section class="section" id="overview">
-  <div class="container">
-    <h2 class="section-title">Overview</h2>
-    <div class="cards" id="overviewCards">
-      <div class="card">
-        <div class="card-value" id="cardTotalRequests">—</div>
-        <div class="card-label">Total Requests</div>
-      </div>
-      <div class="card">
-        <div class="card-value" id="cardBuckets">—</div>
-        <div class="card-label">IP/Hour Buckets</div>
-      </div>
-      <div class="card card-danger">
-        <div class="card-value" id="cardAnomalies">—</div>
-        <div class="card-label">Anomalous Buckets</div>
-      </div>
-      <div class="card card-ok">
-        <div class="card-value" id="cardNormal">—</div>
-        <div class="card-label">Normal Buckets</div>
-      </div>
-      <div class="card card-warn">
-        <div class="card-value" id="cardAnomalyRate">—</div>
-        <div class="card-label">Anomaly Rate (%)</div>
-      </div>
+<!-- =================== SIDEBAR =================== -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <span class="shield">🛡</span>
+    <div>
+      <div class="sidebar-brand-name">LogGuard</div>
+      <div class="sidebar-brand-sub">Audit Workbench</div>
     </div>
   </div>
-</section>
+  <ul class="sidebar-nav">
+    <li class="active"><a href="#overview"><span class="nav-icon">📊</span> Overview</a></li>
+    <li><a href="#anomalies"><span class="nav-icon">🔍</span> Anomaly Explorer</a></li>
+    <li><a href="#charts"><span class="nav-icon">📈</span> Evidence &amp; Reports</a></li>
+    {% if user.is_admin %}
+    <li><a href="{{ url_for('admin') }}"><span class="nav-icon">⚙️</span> Admin</a></li>
+    {% endif %}
+  </ul>
+</nav>
 
-<!-- ===================== CHARTS ===================== -->
-<section class="section section-dark" id="charts">
-  <div class="container">
-    <h2 class="section-title">System Risk Timeline &amp; Traffic Breakdown</h2>
-    <div class="chart-grid">
-      <div class="chart-card">
-        <h3>Risk Score Over Time</h3>
-        <canvas id="timelineChart"></canvas>
-      </div>
-      <div class="chart-card">
-        <h3>HTTP Status Distribution</h3>
-        <canvas id="statusChart"></canvas>
-      </div>
-      <div class="chart-card">
-        <h3>Request Methods</h3>
-        <canvas id="methodChart"></canvas>
-      </div>
-      <div class="chart-card">
-        <h3>Normal vs Anomalous</h3>
-        <canvas id="pieChart"></canvas>
+<!-- =================== MAIN AREA =================== -->
+<div class="workbench-main" id="workbenchMain">
+
+  <!-- ============ TOP BAR ============ -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">☰</button>
+      <h1 class="topbar-title">IT Audit Anomaly Detection</h1>
+    </div>
+    <div class="topbar-right">
+      <!-- Engagement selector (UI-only placeholder) -->
+      <select class="topbar-select" title="Active Engagement">
+        <option>Engagement 2024-Q4</option>
+        <option>Engagement 2024-Q3</option>
+        <option>New Engagement…</option>
+      </select>
+      <!-- Date range (UI-only placeholder) -->
+      <input type="text" class="topbar-input" placeholder="Date range…" title="Date range filter" />
+      <!-- Global search -->
+      <input type="text" class="topbar-input topbar-search" id="globalSearch" placeholder="🔍 Search…" title="Search" />
+      <!-- User menu -->
+      <div class="user-menu">
+        <span class="user-name">{{ user.username }}</span>
+        <span class="user-role role-{{ user.role }}">{{ user.role }}</span>
+        <form method="POST" action="{{ url_for('logout') }}" style="display:inline;">
+          <button type="submit" class="btn btn-secondary btn-sm">Sign Out</button>
+        </form>
       </div>
     </div>
-  </div>
-</section>
+  </header>
 
-<!-- ===================== ANOMALY TABLE ===================== -->
-<section class="section" id="anomalies">
-  <div class="container">
-    <h2 class="section-title">🚨 Top Suspicious Events</h2>
-    <p class="section-desc">Ranked by anomaly score (higher = more suspicious).
-       Each row represents one IP address within a one-hour time window.</p>
+  <!-- ============ CONTENT AREA ============ -->
+  <main class="content-area">
 
-    <div class="table-controls">
-      <input type="text" id="tableSearch" placeholder="Filter by IP or hour…" />
-    </div>
+    <!-- ---- Upload panel ---- -->
+    <section class="upload-section">
+      <div class="upload-box" id="uploadBox">
+        <p>📂 Drop a log file here, or</p>
+        <label class="btn btn-primary" for="fileInput">Choose File</label>
+        <input type="file" id="fileInput" accept=".log,.txt" />
+        <span class="upload-sep">or</span>
+        <button class="btn btn-secondary" id="btnSample">Analyse sample logs</button>
+      </div>
+      <div id="spinner" class="spinner hidden">⚙ Analysing…</div>
+    </section>
 
-    <div class="table-wrapper">
-      <table id="anomalyTable">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>IP Address</th>
-            <th>Hour Bucket (UTC)</th>
-            <th>Risk Score</th>
-            <th>Requests/hr</th>
-            <th>Error Rate</th>
-            <th>Unique Endpoints</th>
-            <th>POST Ratio</th>
-            <th>Off-Hours</th>
-            <th>Scanner UA</th>
-          </tr>
-        </thead>
-        <tbody id="anomalyBody">
-          <tr><td colspan="10" class="placeholder">Run an analysis to see results.</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
+    <!-- ---- Overview cards ---- -->
+    <section id="overview">
+      <h2 class="section-title">Overview</h2>
+      <div class="cards" id="overviewCards">
+        <div class="card">
+          <div class="card-value" id="cardTotalRequests">—</div>
+          <div class="card-label">Total Requests</div>
+        </div>
+        <div class="card">
+          <div class="card-value" id="cardBuckets">—</div>
+          <div class="card-label">IP/Hour Buckets</div>
+        </div>
+        <div class="card card-danger">
+          <div class="card-value" id="cardAnomalies">—</div>
+          <div class="card-label">Anomalous Buckets</div>
+        </div>
+        <div class="card card-ok">
+          <div class="card-value" id="cardNormal">—</div>
+          <div class="card-label">Normal Buckets</div>
+        </div>
+        <div class="card card-warn">
+          <div class="card-value" id="cardAnomalyRate">—</div>
+          <div class="card-label">Anomaly Rate (%)</div>
+        </div>
+      </div>
+    </section>
 
-<!-- ===================== FOOTER ===================== -->
-<footer class="footer">
-  <p>LogGuard © 2024 · Powered by Isolation Forest (scikit-learn) · Built with Flask &amp; Chart.js</p>
-</footer>
+    <!-- ---- Charts ---- -->
+    <section id="charts">
+      <h2 class="section-title">System Risk Timeline &amp; Traffic Breakdown</h2>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Risk Score Over Time</h3>
+          <canvas id="timelineChart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>HTTP Status Distribution</h3>
+          <canvas id="statusChart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Request Methods</h3>
+          <canvas id="methodChart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Normal vs Anomalous</h3>
+          <canvas id="pieChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---- Anomaly table ---- -->
+    <section id="anomalies">
+      <h2 class="section-title">🚨 Top Suspicious Events</h2>
+      <p class="section-desc">Ranked by anomaly score (higher = more suspicious).
+         Each row represents one IP address within a one-hour time window.</p>
+
+      <div class="table-controls">
+        <input type="text" id="tableSearch" placeholder="Filter by IP or hour…" />
+      </div>
+
+      <div class="table-wrapper">
+        <table id="anomalyTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>IP Address</th>
+              <th>Hour Bucket (UTC)</th>
+              <th>Risk Score</th>
+              <th>Requests/hr</th>
+              <th>Error Rate</th>
+              <th>Unique Endpoints</th>
+              <th>POST Ratio</th>
+              <th>Off-Hours</th>
+              <th>Scanner UA</th>
+            </tr>
+          </thead>
+          <tbody id="anomalyBody">
+            <tr><td colspan="10" class="placeholder">Run an analysis to see results.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
 
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>
 </html>
+
