@@ -1,0 +1,210 @@
+/* ============================================================
+   LogGuard – Dashboard Styles
+   ============================================================ */
+
+/* ---------- Reset & base ---------- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:         #0d1117;
+  --bg2:        #161b22;
+  --surface:    #1c2128;
+  --border:     #30363d;
+  --accent:     #58a6ff;
+  --danger:     #f85149;
+  --warning:    #d29922;
+  --success:    #3fb950;
+  --text:       #e6edf3;
+  --text-muted: #8b949e;
+  --radius:     8px;
+  --shadow:     0 4px 16px rgba(0,0,0,.4);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---------- Header ---------- */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+}
+.header-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.shield { font-size: 1.6rem; }
+.brand-name { font-size: 1.25rem; font-weight: 700; color: var(--accent); }
+.brand-sub  { font-size: .8rem; color: var(--text-muted); }
+.nav { display: flex; gap: 24px; }
+.nav a { color: var(--text-muted); font-size: .9rem; }
+.nav a:hover { color: var(--text); }
+
+/* ---------- Hero ---------- */
+.hero {
+  background: linear-gradient(135deg, #0d1117 0%, #1a2332 100%);
+  padding: 64px 24px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+.hero-inner { max-width: 720px; margin: 0 auto; }
+.hero h1 { font-size: 2.4rem; font-weight: 800; margin-bottom: 16px; }
+.hero p  { color: var(--text-muted); font-size: 1.05rem; margin-bottom: 32px; }
+
+.upload-box {
+  background: var(--surface);
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+  transition: border-color .2s;
+}
+.upload-box.drag-over { border-color: var(--accent); }
+.upload-box p { color: var(--text-muted); margin-bottom: 16px; }
+.upload-box hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+input[type="file"] { display: none; }
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-block;
+  padding: 10px 24px;
+  border-radius: var(--radius);
+  font-size: .95rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: opacity .15s;
+}
+.btn:hover { opacity: .85; }
+.btn-primary   { background: var(--accent); color: #000; }
+.btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+
+/* ---------- Spinner ---------- */
+.spinner { margin-top: 24px; font-size: 1.1rem; color: var(--accent); animation: pulse 1.2s infinite; }
+.hidden  { display: none !important; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ---------- Sections ---------- */
+.section { padding: 56px 24px; }
+.section-dark { background: var(--bg2); }
+.container { max-width: 1200px; margin: 0 auto; }
+.section-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 8px; }
+.section-desc  { color: var(--text-muted); margin-bottom: 24px; }
+
+/* ---------- Stat Cards ---------- */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px 20px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.card-danger { border-color: var(--danger); }
+.card-ok     { border-color: var(--success); }
+.card-warn   { border-color: var(--warning); }
+.card-value  { font-size: 2rem; font-weight: 800; }
+.card-danger .card-value { color: var(--danger); }
+.card-ok     .card-value { color: var(--success); }
+.card-warn   .card-value { color: var(--warning); }
+.card-label  { color: var(--text-muted); font-size: .85rem; margin-top: 4px; }
+
+/* ---------- Chart grid ---------- */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 24px;
+  margin-top: 24px;
+}
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow);
+}
+.chart-card h3 { font-size: 1rem; margin-bottom: 16px; color: var(--text-muted); }
+
+/* ---------- Table ---------- */
+.table-controls { margin-bottom: 12px; }
+.table-controls input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 8px 14px;
+  font-size: .9rem;
+  width: 100%;
+  max-width: 360px;
+}
+.table-wrapper { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .88rem;
+}
+thead th {
+  background: var(--surface);
+  border-bottom: 2px solid var(--border);
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+tbody td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tbody tr:hover { background: rgba(88, 166, 255, .06); }
+tbody tr.row-danger td { color: var(--danger); }
+td.placeholder { text-align: center; color: var(--text-muted); padding: 40px; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 600;
+}
+.badge-danger  { background: rgba(248,81,73,.2);  color: var(--danger); }
+.badge-ok      { background: rgba(63,185,80,.15); color: var(--success); }
+.badge-warn    { background: rgba(210,153,34,.2); color: var(--warning); }
+
+/* ---------- Footer ---------- */
+.footer {
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  text-align: center;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: .82rem;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 640px) {
+  .hero h1   { font-size: 1.6rem; }
+  .chart-grid { grid-template-columns: 1fr; }
+}
