@@ -5,10 +5,14 @@ LogGuard Flask application.
 
 Routes
 ------
-GET  /              → Serve the dashboard (index.html)
-GET  /api/status    → Health-check / summary statistics
-POST /api/analyze   → Analyse a log file; returns anomaly results as JSON
-GET  /api/results   → Return last analysis results (from in-memory cache)
+GET  /              → Serve the dashboard (index.html) – login required
+GET  /login         → Login page
+POST /login         → Authenticate and start session
+GET  /logout        → End session
+GET  /admin         → Admin page – admin role required
+GET  /api/status    → Health-check / summary statistics – login required
+POST /api/analyze   → Analyse a log file; returns anomaly results as JSON – login required
+GET  /api/results   → Return last analysis results (from in-memory cache) – login required
 """
 
 from __future__ import annotations
@@ -21,7 +25,21 @@ import tempfile
 import traceback
 
 import pandas as pd
-from flask import Flask, jsonify, render_template, request
+from flask import (
+    Flask,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
+from flask_login import (
+    LoginManager,
+    current_user,
+    login_required,
+    login_user,
+    logout_user,
+)
 
 # ---------------------------------------------------------------------------
 # Make the project root importable regardless of working directory
@@ -35,10 +53,78 @@ from pipeline.log_parser import parse_log_file, parse_log_lines
 from pipeline.feature_engineering import engineer_features
 from model.anomaly_detector import run_full_analysis
 
+# Add the app directory to sys.path so that db and models are importable
+# regardless of how the application is invoked (flask run, gunicorn, pytest…)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+from db import (  # noqa: E402
+    init_db,
+    create_user,
+    get_user_by_username,
+    get_user_by_id,
+    count_users,
+    verify_password,
+)
+from models import User  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
-app = Flask(__name__, template_folder="templates", static_folder="static")
+app = Flask(
+    __name__,
+    template_folder="templates",
+    static_folder="static",
+    instance_relative_config=True,
+)
+
+# Secret key for Flask sessions – override with env var in production
+app.secret_key = os.environ.get("LOGGUARD_SECRET_KEY", "dev-insecure-change-me")
+
+# ---------------------------------------------------------------------------
+# Flask-Login setup
+# ---------------------------------------------------------------------------
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+login_manager.login_message = "Please log in to access the Audit Workbench."
+login_manager.login_message_category = "warning"
+
+
+@login_manager.user_loader
+def _load_user(user_id: str) -> "User | None":
+    row = get_user_by_id(app.instance_path, int(user_id))
+    return User(row) if row else None
+
+
+@login_manager.unauthorized_handler
+def _unauthorized():
+    """Return JSON 401 for API requests; redirect to /login for browser requests."""
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Authentication required."}), 401
+    return redirect(url_for("login", next=request.path))
+
+
+# ---------------------------------------------------------------------------
+# DB bootstrap: create admin from env vars on first run
+# ---------------------------------------------------------------------------
+def _bootstrap_db() -> None:
+    """Initialise the DB and create the first admin if no users exist."""
+    init_db(app.instance_path)
+    if count_users(app.instance_path) == 0:
+        username = os.environ.get("LOGGUARD_ADMIN_USERNAME", "").strip()
+        password = os.environ.get("LOGGUARD_ADMIN_PASSWORD", "").strip()
+        if username and password:
+            create_user(app.instance_path, username, password, role="admin")
+            app.logger.info("Bootstrap: admin user '%s' created.", username)
+        else:
+            app.logger.warning(
+                "No users exist. Set LOGGUARD_ADMIN_USERNAME and "
+                "LOGGUARD_ADMIN_PASSWORD env vars to create the first admin."
+            )
+
+
+with app.app_context():
+    _bootstrap_db()
 
 # Path to saved model (relative to project root)
 _MODEL_PATH = os.path.join(_ROOT, "model", "logguard_model.pkl")
@@ -133,11 +219,56 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
 # ---------------------------------------------------------------------------
 
 @app.route("/")
+@login_required
 def index():
-    return render_template("index.html")
+    return render_template("index.html", user=current_user)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        row = get_user_by_username(app.instance_path, username)
+        if row and verify_password(row["password"], password):
+            user = User(row)
+            login_user(user)
+            next_page = request.args.get("next") or url_for("index")
+            # Prevent open-redirect: only follow relative paths
+            if not next_page.startswith("/"):
+                next_page = url_for("index")
+            return redirect(next_page)
+        error = "Invalid username or password."
+    no_users = count_users(app.instance_path) == 0
+    return render_template("login.html", error=error, no_users=no_users)
+
+
+@app.route("/logout", methods=["GET", "POST"])
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for("login"))
+
+
+@app.route("/admin")
+@login_required
+def admin():
+    if not current_user.is_admin:
+        return render_template("admin.html", forbidden=True, user=current_user), 403
+    user_count = count_users(app.instance_path)
+    return render_template(
+        "admin.html",
+        forbidden=False,
+        user=current_user,
+        user_count=user_count,
+    )
 
 
 @app.route("/api/status")
+@login_required
 def status():
     """Health check + info about last run."""
     return jsonify(
@@ -150,6 +281,7 @@ def status():
 
 
 @app.route("/api/analyze", methods=["POST"])
+@login_required
 def analyze():
     """
     Analyse an uploaded log file or a block of log text.
@@ -210,6 +342,7 @@ def analyze():
 
 
 @app.route("/api/results")
+@login_required
 def results():
     """Return the cached results from the last analysis."""
     if not _last_results:

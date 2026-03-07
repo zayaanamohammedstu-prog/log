@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LogGuard — Sign In</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body class="login-page">
+
+<div class="login-wrapper">
+  <div class="login-card">
+    <!-- Brand -->
+    <div class="login-brand">
+      <span class="login-shield">🛡</span>
+      <div>
+        <div class="login-brand-name">LogGuard</div>
+        <div class="login-brand-sub">Audit Workbench</div>
+      </div>
+    </div>
+
+    <h1 class="login-title">Sign in to your account</h1>
+
+    {% if no_users %}
+    <div class="alert alert-warning">
+      <strong>Setup required:</strong> No users exist yet. Set
+      <code>LOGGUARD_ADMIN_USERNAME</code> and <code>LOGGUARD_ADMIN_PASSWORD</code>
+      environment variables and restart the server to create the first admin account.
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('login', next=request.args.get('next', '')) }}" class="login-form">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input
+          type="text"
+          id="username"
+          name="username"
+          autocomplete="username"
+          required
+          autofocus
+          placeholder="Enter your username"
+        />
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input
+          type="password"
+          id="password"
+          name="password"
+          autocomplete="current-password"
+          required
+          placeholder="Enter your password"
+        />
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+    </form>
+
+    <p class="login-footer-text">LogGuard Audit Workbench &copy; 2024</p>
+  </div>
+</div>
+
+</body>
+</html>

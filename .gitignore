@@ -35,3 +35,6 @@ htmlcov/
 *.swp
 *.idea/
 .vscode/
+
+# Flask instance folder (contains SQLite DB and local config)
+instance/

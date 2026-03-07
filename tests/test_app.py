@@ -13,12 +13,29 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.app import app
+from app.db import create_user, init_db
 
 
 @pytest.fixture
-def client():
+def tmp_instance(tmp_path):
+    """Return a temporary instance directory with an empty, initialised DB."""
+    init_db(str(tmp_path))
+    return str(tmp_path)
+
+
+@pytest.fixture
+def client(tmp_instance):
+    """Authenticated Flask test client (auditor user)."""
     app.config["TESTING"] = True
+    app.instance_path = tmp_instance  # type: ignore[assignment]
+    create_user(tmp_instance, "testuser", "testpass", role="auditor")
     with app.test_client() as c:
+        # Log in before yielding so all tests start authenticated
+        c.post(
+            "/login",
+            data={"username": "testuser", "password": "testpass"},
+            follow_redirects=True,
+        )
         yield c
 
 
@@ -114,3 +131,4 @@ class TestRoutes:
             entry = data["timeline"][0]
             assert "hour_bucket" in entry
             assert "mean_risk_score" in entry
+
