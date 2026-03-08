@@ -25,18 +25,59 @@ def _db_path(instance_path: str) -> str:
 # ---------------------------------------------------------------------------
 
 def init_db(instance_path: str) -> None:
-    """Create tables if they don't exist yet."""
+    """Create all application tables if they don't exist yet."""
     os.makedirs(instance_path, exist_ok=True)
     conn = sqlite3.connect(_db_path(instance_path))
     try:
-        conn.execute(
+        conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS users (
                 id       INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT    NOT NULL UNIQUE,
                 password TEXT    NOT NULL,
                 role     TEXT    NOT NULL DEFAULT 'auditor'
-            )
+            );
+
+            CREATE TABLE IF NOT EXISTS analysis_runs (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp  TEXT    NOT NULL,
+                username   TEXT    NOT NULL,
+                input_type TEXT    NOT NULL,
+                input_hash TEXT    NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS analysis_results (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id            INTEGER NOT NULL,
+                ip_address        TEXT,
+                hour_bucket       TEXT,
+                features_json     TEXT,
+                anomaly_score     REAL,
+                is_anomaly        INTEGER,
+                ensemble_score    REAL,
+                model_scores_json TEXT,
+                ensemble_label    TEXT,
+                explanations_json TEXT,
+                FOREIGN KEY (run_id) REFERENCES analysis_runs(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS attack_chains (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id     INTEGER NOT NULL,
+                chain_json TEXT    NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES analysis_runs(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS ledger_entries (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                prev_hash    TEXT    NOT NULL,
+                timestamp    TEXT    NOT NULL,
+                actor        TEXT    NOT NULL,
+                input_hash   TEXT    NOT NULL,
+                results_hash TEXT    NOT NULL,
+                config_hash  TEXT    NOT NULL,
+                entry_hash   TEXT    NOT NULL
+            );
             """
         )
         conn.commit()

@@ -89,6 +89,8 @@ let _pageSize       = 20;
 let _currentPage    = 1;
 let _sortCol        = "anomaly_score";
 let _sortAsc        = false;
+let _lastRunId      = null;
+let _chains         = [];
 
 // ============================================================
 // UTILITY FUNCTIONS
@@ -639,7 +641,7 @@ function renderTable(rows) {
   const page   = filtered.slice(start, start + _pageSize);
 
   const tbody = document.getElementById("anomalyBody");
-  const colCount = 11;
+  const colCount = 12;
 
   if (filtered.length === 0) {
     tbody.innerHTML = `<tr><td colspan="${colCount}" class="placeholder">No anomalies match the current filter.</td></tr>`;
@@ -658,8 +660,27 @@ function renderTable(rows) {
         <td>${yesNo(r.is_off_hours)}</td>
         <td>${r.has_scanner_ua ? '<span class="badge badge-danger">YES</span>' : '<span style="color:var(--text-muted)">—</span>'}</td>
         <td><span class="badge badge-${risk === "critical" ? "critical" : risk === "high" ? "danger" : risk === "medium" ? "warn" : "ok"}">${riskLabel(r.anomaly_score)}</span></td>
+        <td><button class="btn btn-secondary btn-sm drill-btn" data-idx="${start + i}" style="padding:3px 8px;font-size:.75rem;">🔍 Drill</button></td>
       </tr>`;
     }).join("");
+
+    // Attach drill-down listeners
+    tbody.querySelectorAll(".drill-btn").forEach(btn => {
+      btn.addEventListener("click", e => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.idx);
+        openDrillDown(filtered[idx]);
+      });
+    });
+
+    // Row click also opens drill-down
+    tbody.querySelectorAll("tr").forEach((tr, i) => {
+      tr.style.cursor = "pointer";
+      tr.addEventListener("click", e => {
+        if (e.target.tagName === "BUTTON") return;
+        openDrillDown(filtered[start + i]);
+      });
+    });
   }
 
   // Pagination
@@ -824,23 +845,180 @@ function renderEvidence(data) {
 }
 
 // ============================================================
+// DRILL-DOWN PANEL
+// ============================================================
+function openDrillDown(row) {
+  if (!row) return;
+  const overlay = document.getElementById("drillOverlay");
+  if (!overlay) return;
+
+  // Title
+  document.getElementById("drillTitle").textContent =
+    `${row.ip_address || "Unknown IP"} — ${fmtHour(row.hour_bucket)}`;
+
+  // KV overview
+  const kvGrid = document.getElementById("drillKvGrid");
+  const risk   = riskLabel(row.anomaly_score || 0);
+  kvGrid.innerHTML = [
+    ["Ensemble Score", ((row.ensemble_score || row.anomaly_score || 0) * 100).toFixed(1) + "%"],
+    ["Risk Level", risk],
+    ["Label", row.ensemble_label || (row.is_anomaly ? "anomaly" : "normal")],
+    ["Model Agreement", row.agreement_pct !== undefined ? ((row.agreement_pct || 0) * 100).toFixed(0) + "%" : "—"],
+  ].map(([l, v]) => `<div class="drill-kv"><div class="drill-kv-label">${l}</div><div class="drill-kv-value">${v}</div></div>`).join("");
+
+  // Reason codes
+  const reasonsEl = document.getElementById("drillReasons");
+  let explanations = {};
+  if (row.explanations_json) {
+    try { explanations = JSON.parse(row.explanations_json); } catch (_) {}
+  }
+  const reasons = explanations.reasons || [];
+  if (reasons.length > 0) {
+    reasonsEl.innerHTML = reasons.map(([code, desc]) =>
+      `<span class="reason-tag">⚠ ${code}: ${desc}</span>`
+    ).join("");
+  } else {
+    reasonsEl.innerHTML = `<span style="color:var(--text-muted);font-size:.82rem;">No specific reason codes flagged.</span>`;
+  }
+
+  // Feature deviations
+  const devsEl  = document.getElementById("drillDeviations");
+  const devs    = explanations.feature_deviations || [];
+  if (devs.length > 0) {
+    const sorted = devs.slice().sort((a, b) => Math.abs(b.z_score || 0) - Math.abs(a.z_score || 0));
+    devsEl.innerHTML = sorted.slice(0, 6).map(d => {
+      const z    = (d.z_score || 0).toFixed(2);
+      const cls  = d.z_score > 0 ? "deviation-pos" : "deviation-neg";
+      const pctl = d.percentile !== undefined ? ` (p${Math.round(d.percentile)})` : "";
+      return `<div class="deviation-row">
+        <span class="deviation-feat">${d.feature}</span>
+        <span class="deviation-score ${cls}">z=${z}${pctl}</span>
+      </div>`;
+    }).join("");
+  } else {
+    devsEl.innerHTML = `<span style="color:var(--text-muted);font-size:.82rem;">Deviation data not available.</span>`;
+  }
+
+  // Per-model scores
+  const modelsEl = document.getElementById("drillModelScores");
+  const models   = [
+    ["Isolation Forest", row.score_isolation_forest],
+    ["LOF",              row.score_lof],
+    ["One-Class SVM",    row.score_ocsvm],
+  ];
+  modelsEl.innerHTML = models.map(([name, score]) => {
+    if (score === undefined || score === null) return "";
+    const pctVal = (score * 100).toFixed(1);
+    const color  = score >= 0.7 ? "#f85149" : score >= 0.5 ? "#d29922" : "#3fb950";
+    return `<div class="model-score-bar">
+      <div class="model-score-label"><span>${name}</span><span>${pctVal}%</span></div>
+      <div class="model-score-track">
+        <div class="model-score-fill" style="width:${pctVal}%;background:${color};"></div>
+      </div>
+    </div>`;
+  }).join("") || `<span style="color:var(--text-muted);font-size:.82rem;">Model scores not available.</span>`;
+
+  // Chain membership
+  const chainSection = document.getElementById("drillChainSection");
+  const chainInfo    = document.getElementById("drillChainInfo");
+  const ipChains = _chains.filter(c => c.ip_address === row.ip_address);
+  if (ipChains.length > 0) {
+    chainSection.style.display = "";
+    chainInfo.innerHTML = ipChains.map(c => `
+      <div class="chain-badge" style="margin-bottom:6px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;">
+        <span>🔗 Chain #${c.chain_id} — ${c.severity || "Unknown"} severity</span>
+        <span style="font-size:.75rem;font-weight:400;">${c.anomaly_count} anomaly(ies) · ${fmtHour(c.start_time)} → ${fmtHour(c.end_time)}</span>
+        <span style="font-size:.75rem;font-weight:400;font-style:italic;">${c.narrative || ""}</span>
+      </div>
+    `).join("");
+  } else {
+    chainSection.style.display = "none";
+  }
+
+  // Raw features grid
+  const featsEl = document.getElementById("drillFeaturesGrid");
+  const featCols = ["requests_per_hour","error_rate","unique_endpoints","avg_bytes_sent",
+                    "post_ratio","is_off_hours","is_weekend","has_scanner_ua",
+                    "requests_vs_expected","bytes_vs_expected","error_rate_delta"];
+  const fmtVal = (k, v) => {
+    if (v === null || v === undefined) return "—";
+    if (["error_rate","post_ratio","requests_vs_expected","bytes_vs_expected","error_rate_delta"].includes(k))
+      return (v * 100).toFixed(1) + (["requests_vs_expected","bytes_vs_expected"].includes(k) ? "x" : "%");
+    if (["is_off_hours","is_weekend","has_scanner_ua"].includes(k))
+      return v ? "Yes" : "No";
+    if (typeof v === "number") return v.toFixed(2);
+    return String(v);
+  };
+  featsEl.innerHTML = featCols.filter(k => row[k] !== undefined).map(k =>
+    `<div class="drill-kv"><div class="drill-kv-label">${k}</div><div class="drill-kv-value">${fmtVal(k, row[k])}</div></div>`
+  ).join("");
+
+  overlay.classList.add("open");
+}
+
+function closeDrillDown() {
+  const overlay = document.getElementById("drillOverlay");
+  if (overlay) overlay.classList.remove("open");
+}
+
+// ============================================================
+// RENDER: ATTACK CHAINS
+// ============================================================
+function renderChains(chains) {
+  _chains = chains || [];
+  const listEl = document.getElementById("chainsList");
+  if (!listEl) return;
+  if (!_chains.length) {
+    listEl.innerHTML = `<div class="finding-card"><p style="color:var(--text-muted)">No attack chains detected — all anomalies appear isolated.</p></div>`;
+    return;
+  }
+  const sevColor = { Critical: "#f85149", High: "#d29922", Medium: "#3fb950" };
+  listEl.innerHTML = _chains.map(c => {
+    const color = sevColor[c.severity] || "var(--text-muted)";
+    return `<div class="chain-card">
+      <div class="chain-card-header">
+        <code class="chain-card-ip">${c.ip_address}</code>
+        <span class="badge" style="background:${color}22;color:${color};border:1px solid ${color}44;">${c.severity || "Unknown"}</span>
+      </div>
+      <div class="chain-narrative">${c.narrative || ""}</div>
+      <div class="chain-meta">
+        <span class="chain-meta-item">🔗 ${c.anomaly_count} anomaly bucket(s)</span>
+        <span class="chain-meta-item">⏱ ${fmtHour(c.start_time)} → ${fmtHour(c.end_time)}</span>
+        <span class="chain-meta-item">📊 Max score: ${((c.max_score || 0) * 100).toFixed(1)}%</span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// ============================================================
 // MAIN RENDER
 // ============================================================
 function renderResults(data) {
   _lastData     = data;
   _allAnomalies = data.top_anomalies || [];
+  _chains       = data.chains || [];
   _currentPage  = 1;
+  if (data.run_id) _lastRunId = data.run_id;
 
   renderCards(data);
   renderAllCharts(data);
   renderTable(_allAnomalies);
   renderEvidence(data);
+  renderChains(data.chains);
 
-  // Timestamp
-  const tsEl = document.getElementById("analysisTimestamp");
-  if (tsEl) {
-    tsEl.textContent = `Last analysed: ${new Date().toLocaleString()}`;
-    tsEl.classList.remove("hidden");
+  // Show run ID badge in topbar if available
+  if (data.run_id) {
+    const tsEl = document.getElementById("analysisTimestamp");
+    if (tsEl) {
+      tsEl.innerHTML = `Last analysed: ${new Date().toLocaleString()} <span class="run-id-badge">Run #${data.run_id}</span>`;
+      tsEl.classList.remove("hidden");
+    }
+  } else {
+    const tsEl = document.getElementById("analysisTimestamp");
+    if (tsEl) {
+      tsEl.textContent = `Last analysed: ${new Date().toLocaleString()}`;
+      tsEl.classList.remove("hidden");
+    }
   }
 
   showToast("Analysis complete — " + (data.anomaly_count || 0) + " anomalies found", "info");
@@ -1010,6 +1188,24 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("btnExportTableCsv")?.addEventListener("click", exportTableCsv);
   document.getElementById("btnCopySummary")?.addEventListener("click", copySummary);
   document.getElementById("btnPrintReport")?.addEventListener("click", () => window.print());
+
+  // HTML Report download
+  document.getElementById("btnDownloadHtmlReport")?.addEventListener("click", async () => {
+    if (!_lastRunId) { showToast("Run an analysis first to generate a report.", "error"); return; }
+    const a = document.createElement("a");
+    a.href = `/api/runs/${_lastRunId}/report`;
+    a.target = "_blank";
+    a.download = `logguard_report_run_${_lastRunId}.html`;
+    a.click();
+    showToast("HTML report download started.", "success");
+  });
+
+  // Drill-down modal close
+  document.getElementById("drillClose")?.addEventListener("click", closeDrillDown);
+  document.getElementById("drillOverlay")?.addEventListener("click", e => {
+    if (e.target === document.getElementById("drillOverlay")) closeDrillDown();
+  });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrillDown(); });
 
   // Auto-load if results exist
   try {

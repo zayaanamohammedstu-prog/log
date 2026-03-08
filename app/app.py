@@ -13,14 +13,24 @@ GET  /admin         → Admin page – admin role required
 GET  /api/status    → Health-check / summary statistics – login required
 POST /api/analyze   → Analyse a log file; returns anomaly results as JSON – login required
 GET  /api/results   → Return last analysis results (from in-memory cache) – login required
+GET  /api/runs                                → List all analysis runs
+GET  /api/runs/<run_id>                       → Get run with results
+GET  /api/runs/<run_id>/anomalies/<anomaly_id> → Single anomaly detail
+GET  /api/runs/<run_id>/ips/<ip>/timeline     → IP activity timeline
+GET  /api/runs/<run_id>/chains                → List attack chains
+GET  /api/runs/<run_id>/chains/<chain_id>     → Single chain detail
+GET  /api/runs/<run_id>/report                → HTML report
+GET  /api/audit/verify                        → Verify ledger (admin)
+GET  /api/audit/entries                       → List ledger entries (admin)
 """
 
 from __future__ import annotations
 
+import hashlib
 import io
+import json
 import os
 import sys
-import json
 import tempfile
 import traceback
 
@@ -51,8 +61,16 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from pipeline.log_parser import parse_log_file, parse_log_lines
-from pipeline.feature_engineering import engineer_features
+from pipeline.feature_engineering import engineer_features, get_feature_matrix, _FEATURE_COLUMNS
+from pipeline.baselines import (
+    compute_global_baselines,
+    compute_ip_baselines,
+    add_baseline_features,
+)
+from pipeline.attack_chain import build_chains
 from model.anomaly_detector import run_full_analysis
+from model.ensemble import run_ensemble
+from model.explain import explain_all
 
 # Add the app directory to sys.path so that db and models are importable
 # regardless of how the application is invoked (flask run, gunicorn, pytest…)
@@ -68,6 +86,24 @@ from db import (  # noqa: E402
     verify_password,
 )
 from models import User  # noqa: E402
+from run_store import (  # noqa: E402
+    init_run_store,
+    save_run,
+    save_results,
+    get_run,
+    list_runs,
+    get_run_results,
+    save_chains,
+    get_chains,
+    get_chain,
+)
+from audit_ledger import (  # noqa: E402
+    init_ledger,
+    append_entry,
+    get_all_entries,
+    verify_chain,
+)
+from reporting import generate_html_report  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -111,6 +147,8 @@ def _unauthorized():
 def _bootstrap_db() -> None:
     """Initialise the DB and create the first admin if no users exist."""
     init_db(app.instance_path)
+    init_run_store(app.instance_path)
+    init_ledger(app.instance_path)
     if count_users(app.instance_path) == 0:
         username = os.environ.get("LOGGUARD_ADMIN_USERNAME", "").strip()
         password = os.environ.get("LOGGUARD_ADMIN_PASSWORD", "").strip()
@@ -165,12 +203,52 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
     if features_df.empty:
         return {"error": "Feature engineering produced no rows."}
 
-    results_df = run_full_analysis(features_df, model_path=_MODEL_PATH)
+    # ── Baselines ────────────────────────────────────────────────────────────
+    global_baselines = compute_global_baselines(features_df)
+    ip_baselines = compute_ip_baselines(features_df)
+    features_df = add_baseline_features(features_df, global_baselines, ip_baselines)
 
+    # ── Ensemble anomaly detection ───────────────────────────────────────────
+    X = get_feature_matrix(features_df)
+    results_df = features_df.copy()
+    try:
+        ensemble_result = run_ensemble(X)
+        results_df["is_anomaly"] = ensemble_result["ensemble_label"]
+        results_df["anomaly_score"] = ensemble_result["ensemble_score"]
+        results_df["ensemble_score"] = ensemble_result["ensemble_score"]
+        results_df["ensemble_label"] = [
+            "anomaly" if lbl else "normal"
+            for lbl in ensemble_result["ensemble_label"]
+        ]
+        for model_name in ("isolation_forest", "lof", "ocsvm"):
+            results_df[f"score_{model_name}"] = (
+                ensemble_result["per_model_scores"][model_name]
+            )
+        results_df["agreement_pct"] = ensemble_result["agreement_pct"]
+    except Exception:
+        app.logger.warning(
+            "Ensemble failed, falling back to IsolationForest:\n%s",
+            traceback.format_exc(),
+        )
+        fallback = run_full_analysis(features_df, model_path=_MODEL_PATH)
+        results_df["is_anomaly"] = fallback["is_anomaly"]
+        results_df["anomaly_score"] = fallback["anomaly_score"]
+        results_df["ensemble_score"] = fallback["anomaly_score"]
+        results_df["ensemble_label"] = [
+            "anomaly" if a else "normal" for a in fallback["is_anomaly"]
+        ]
+
+    # ── Explanations ─────────────────────────────────────────────────────────
+    results_df = explain_all(results_df, global_baselines, ip_baselines)
+
+    # ── Derived splits ───────────────────────────────────────────────────────
     anomalies_df = results_df[results_df["is_anomaly"]].sort_values(
         "anomaly_score", ascending=False
     )
     normal_df = results_df[~results_df["is_anomaly"]]
+
+    # ── Attack chains ────────────────────────────────────────────────────────
+    chains = build_chains(anomalies_df)
 
     top_anomalies = _dataframe_to_records(anomalies_df.head(20))
     all_results = _dataframe_to_records(results_df)
@@ -206,7 +284,10 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
         .head(10)
         .to_dict(orient="records")
     )
-    top_ips = [{"ip_address": r["ip_address"], "request_count": int(r["request_count"])} for r in top_ips]
+    top_ips = [
+        {"ip_address": r["ip_address"], "request_count": int(r["request_count"])}
+        for r in top_ips
+    ]
 
     # Hourly distribution (hour 0–23)
     hourly_dist_series = (
@@ -235,7 +316,10 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
     if not anomalies_df.empty:
         top_anomalous_ips = (
             anomalies_df.groupby("ip_address")
-            .agg(max_score=("anomaly_score", "max"), total_requests=("requests_per_hour", "sum"))
+            .agg(
+                max_score=("anomaly_score", "max"),
+                total_requests=("requests_per_hour", "sum"),
+            )
             .sort_values("max_score", ascending=False)
             .head(10)
             .reset_index()
@@ -279,6 +363,7 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
         "risk_distribution": risk_distribution,
         "top_anomalous_ips": top_anomalous_ips,
         "top_endpoints": top_endpoints,
+        "chains": chains,
     }
     return summary
 
@@ -365,14 +450,18 @@ def analyze():
     try:
         use_sample = False
         raw_df = None
+        input_type = "sample"
+        raw_bytes = b""
 
         # --- file upload ---
         if "logfile" in request.files:
             f = request.files["logfile"]
+            raw_bytes = f.read()
+            input_type = "upload"
             with tempfile.NamedTemporaryFile(
                 suffix=".log", delete=False, mode="wb"
             ) as tmp:
-                f.save(tmp)
+                tmp.write(raw_bytes)
                 tmp_path = tmp.name
             try:
                 raw_df = parse_log_file(tmp_path)
@@ -385,6 +474,8 @@ def analyze():
             if payload.get("use_sample"):
                 use_sample = True
             elif "log_text" in payload:
+                input_type = "log_text"
+                raw_bytes = payload["log_text"].encode()
                 lines = payload["log_text"].splitlines()
                 raw_df = parse_log_lines(lines)
             else:
@@ -396,10 +487,75 @@ def analyze():
 
         if use_sample:
             sample_path = os.path.join(_ROOT, "data", "sample_logs.txt")
+            with open(sample_path, "rb") as fh:
+                raw_bytes = fh.read()
             raw_df = parse_log_file(sample_path)
+
+        input_hash = hashlib.sha256(raw_bytes).hexdigest()
 
         result = _analyse_df(raw_df)
         if "error" not in result:
+            # ── Persist the run ───────────────────────────────────────────
+            run_id = save_run(
+                app.instance_path,
+                username=current_user.username,
+                input_type=input_type,
+                input_hash=input_hash,
+            )
+
+            # Build records for DB insertion using the canonical feature column list
+            records_to_save = []
+            for rec in result.get("all_results", []):
+                model_scores = {
+                    m: rec.get(f"score_{m}")
+                    for m in ("isolation_forest", "lof", "ocsvm")
+                    if rec.get(f"score_{m}") is not None
+                }
+                records_to_save.append({
+                    "ip_address": rec.get("ip_address"),
+                    "hour_bucket": rec.get("hour_bucket"),
+                    "features": {
+                        col: rec.get(col)
+                        for col in _FEATURE_COLUMNS  # from pipeline.feature_engineering
+                        if col in rec
+                    },
+                    "anomaly_score": rec.get("anomaly_score"),
+                    "is_anomaly": rec.get("is_anomaly"),
+                    "ensemble_score": rec.get("ensemble_score"),
+                    "model_scores": model_scores,
+                    "ensemble_label": rec.get("ensemble_label"),
+                    "explanations": (
+                        json.loads(rec["explanations_json"])
+                        if rec.get("explanations_json")
+                        else {}
+                    ),
+                })
+            save_results(app.instance_path, run_id, records_to_save)
+
+            # Save attack chains
+            chains = result.get("chains", [])
+            if chains:
+                save_chains(app.instance_path, run_id, chains)
+
+            # Compute results_hash for the ledger
+            results_summary = json.dumps(
+                {
+                    "run_id": run_id,
+                    "anomaly_count": result.get("anomaly_count"),
+                    "total_requests": result.get("total_requests"),
+                },
+                sort_keys=True,
+            )
+            results_hash = hashlib.sha256(results_summary.encode()).hexdigest()
+
+            append_entry(
+                app.instance_path,
+                actor=current_user.username,
+                input_hash=input_hash,
+                results_hash=results_hash,
+            )
+
+            result["run_id"] = run_id
             _last_results = result
 
         return jsonify(result)
@@ -408,6 +564,118 @@ def analyze():
         tb = traceback.format_exc()
         app.logger.error("Analysis error:\n%s", tb)
         return jsonify({"error": "Internal error during analysis.", "detail": tb}), 500
+
+
+# ---------------------------------------------------------------------------
+# Run management endpoints
+# ---------------------------------------------------------------------------
+
+@app.route("/api/runs")
+@login_required
+def api_list_runs():
+    """List all analysis runs, newest first."""
+    runs = list_runs(app.instance_path)
+    return jsonify({"runs": runs})
+
+
+@app.route("/api/runs/<int:run_id>")
+@login_required
+def api_get_run(run_id: int):
+    """Return run metadata and all result rows."""
+    run = get_run(app.instance_path, run_id)
+    if run is None:
+        return jsonify({"error": "Run not found."}), 404
+    results = get_run_results(app.instance_path, run_id)
+    return jsonify({"run": run, "results": results})
+
+
+@app.route("/api/runs/<int:run_id>/anomalies/<int:anomaly_id>")
+@login_required
+def api_get_anomaly(run_id: int, anomaly_id: int):
+    """Return a single anomaly result row by its DB id."""
+    results = get_run_results(app.instance_path, run_id)
+    for r in results:
+        if r.get("id") == anomaly_id:
+            return jsonify(r)
+    return jsonify({"error": "Anomaly not found."}), 404
+
+
+@app.route("/api/runs/<int:run_id>/ips/<path:ip>/timeline")
+@login_required
+def api_ip_timeline(run_id: int, ip: str):
+    """Return all result rows for a specific IP in a run, ordered by time."""
+    results = get_run_results(app.instance_path, run_id)
+    timeline = sorted(
+        [r for r in results if r.get("ip_address") == ip],
+        key=lambda r: r.get("hour_bucket") or "",
+    )
+    if not timeline:
+        return jsonify({"error": "IP not found in this run."}), 404
+    return jsonify({"ip_address": ip, "timeline": timeline})
+
+
+@app.route("/api/runs/<int:run_id>/chains")
+@login_required
+def api_list_chains(run_id: int):
+    """List all attack chains for a run."""
+    run = get_run(app.instance_path, run_id)
+    if run is None:
+        return jsonify({"error": "Run not found."}), 404
+    chains = get_chains(app.instance_path, run_id)
+    return jsonify({"run_id": run_id, "chains": chains})
+
+
+@app.route("/api/runs/<int:run_id>/chains/<int:chain_id>")
+@login_required
+def api_get_chain(run_id: int, chain_id: int):
+    """Return a single chain by its DB id."""
+    chain = get_chain(app.instance_path, run_id, chain_id)
+    if chain is None:
+        return jsonify({"error": "Chain not found."}), 404
+    return jsonify(chain)
+
+
+@app.route("/api/runs/<int:run_id>/report")
+@login_required
+def api_run_report(run_id: int):
+    """Generate and return an HTML report for a run."""
+    run = get_run(app.instance_path, run_id)
+    if run is None:
+        return jsonify({"error": "Run not found."}), 404
+    results = get_run_results(app.instance_path, run_id)
+    chains = get_chains(app.instance_path, run_id)
+    html_report = generate_html_report(run, results, chains)
+    return Response(
+        html_report,
+        mimetype="text/html",
+        headers={
+            "Content-Disposition": f'inline; filename="report_run_{run_id}.html"'
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Audit ledger endpoints (admin only)
+# ---------------------------------------------------------------------------
+
+@app.route("/api/audit/verify")
+@login_required
+def api_audit_verify():
+    """Verify the integrity of the audit ledger. Admin only."""
+    if not current_user.is_admin:
+        return jsonify({"error": "Admin access required."}), 403
+    result = verify_chain(app.instance_path)
+    return jsonify(result)
+
+
+@app.route("/api/audit/entries")
+@login_required
+def api_audit_entries():
+    """Return all audit ledger entries. Admin only."""
+    if not current_user.is_admin:
+        return jsonify({"error": "Admin access required."}), 403
+    entries = get_all_entries(app.instance_path)
+    return jsonify({"entries": entries})
 
 
 @app.route("/api/results")
