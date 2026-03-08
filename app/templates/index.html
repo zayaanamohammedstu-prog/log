@@ -1,14 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LogGuard — Audit Workbench</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
-  <!-- Chart.js via CDN (no build step required) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
-<body class="workbench-page">
+<body class="workbench-page" data-username="{{ user.username }}" data-role="{{ user.role }}">
 
 <!-- =================== SIDEBAR =================== -->
 <nav class="sidebar" id="sidebar">
@@ -16,17 +15,42 @@
     <span class="shield">🛡</span>
     <div>
       <div class="sidebar-brand-name">LogGuard</div>
-      <div class="sidebar-brand-sub">Audit Workbench</div>
+      <div class="sidebar-brand-sub">Audit Workbench v2</div>
     </div>
   </div>
+
+  <div class="sidebar-section-label">Dashboard</div>
   <ul class="sidebar-nav">
-    <li class="active"><a href="#overview"><span class="nav-icon">📊</span> Overview</a></li>
-    <li><a href="#anomalies"><span class="nav-icon">🔍</span> Anomaly Explorer</a></li>
-    <li><a href="#charts"><span class="nav-icon">📈</span> Evidence &amp; Reports</a></li>
+    <li class="active" data-tab-link="tab-overview">
+      <a href="#" onclick="return false;"><span class="nav-icon">📊</span> Overview</a>
+    </li>
+    <li data-tab-link="tab-anomalies">
+      <a href="#" onclick="return false;"><span class="nav-icon">🔍</span> Anomaly Explorer</a>
+    </li>
+    <li data-tab-link="tab-evidence">
+      <a href="#" onclick="return false;"><span class="nav-icon">📋</span> Evidence &amp; Reports</a>
+    </li>
+    <li data-tab-link="tab-export">
+      <a href="#" onclick="return false;"><span class="nav-icon">📤</span> Export &amp; Visualise</a>
+    </li>
+  </ul>
+
+  <div class="sidebar-section-label">System</div>
+  <ul class="sidebar-nav">
     {% if user.is_admin %}
     <li><a href="{{ url_for('admin') }}"><span class="nav-icon">⚙️</span> Admin</a></li>
     {% endif %}
+    <li>
+      <a href="#" id="sidebarThemeToggle" onclick="return false;">
+        <span class="nav-icon" id="sidebarThemeIcon">🌙</span>
+        <span id="sidebarThemeLabel">Light Mode</span>
+      </a>
+    </li>
   </ul>
+
+  <div class="sidebar-footer">
+    ISACA IT Audit Framework &mdash; v2.0
+  </div>
 </nav>
 
 <!-- =================== MAIN AREA =================== -->
@@ -39,17 +63,14 @@
       <h1 class="topbar-title">IT Audit Anomaly Detection</h1>
     </div>
     <div class="topbar-right">
-      <!-- Engagement selector (UI-only placeholder) -->
-      <select class="topbar-select" title="Active Engagement">
+      <select class="topbar-select" id="engagementSelect" title="Active Engagement">
         <option>Engagement 2024-Q4</option>
         <option>Engagement 2024-Q3</option>
         <option>New Engagement…</option>
       </select>
-      <!-- Date range (UI-only placeholder) -->
-      <input type="text" class="topbar-input" placeholder="Date range…" title="Date range filter" />
-      <!-- Global search -->
+      <input type="text" class="topbar-input" id="dateRangeInput" placeholder="Date range…" title="Date range filter" />
       <input type="text" class="topbar-input topbar-search" id="globalSearch" placeholder="🔍 Search…" title="Search" />
-      <!-- User menu -->
+      <button class="theme-toggle" id="themeToggle" title="Toggle light/dark theme">🌙</button>
       <div class="user-menu">
         <span class="user-name">{{ user.username }}</span>
         <span class="user-role role-{{ user.role }}">{{ user.role }}</span>
@@ -61,105 +82,342 @@
   </header>
 
   <!-- ============ CONTENT AREA ============ -->
-  <main class="content-area">
+  <div class="content-area">
 
-    <!-- ---- Upload panel ---- -->
-    <section class="upload-section">
-      <div class="upload-box" id="uploadBox">
-        <p>📂 Drop a log file here, or</p>
-        <label class="btn btn-primary" for="fileInput">Choose File</label>
-        <input type="file" id="fileInput" accept=".log,.txt" />
-        <span class="upload-sep">or</span>
-        <button class="btn btn-secondary" id="btnSample">Analyse sample logs</button>
+    <!-- ---- TAB BAR ---- -->
+    <nav class="tab-bar" id="tabBar">
+      <button class="tab-btn active" data-tab="tab-overview">📊 Overview</button>
+      <button class="tab-btn" data-tab="tab-anomalies">🔍 Anomaly Explorer</button>
+      <button class="tab-btn" data-tab="tab-evidence">📋 Evidence &amp; Reports</button>
+      <button class="tab-btn" data-tab="tab-export">📤 Export &amp; Visualise</button>
+    </nav>
+
+    <!-- ================================================================
+         TAB 1 — OVERVIEW
+         ================================================================ -->
+    <section class="tab-panel active" id="tab-overview">
+
+      <!-- Upload -->
+      <div class="upload-section">
+        <div class="upload-box" id="uploadBox">
+          <span>📂</span>
+          <p>Drop a log file here, or</p>
+          <label class="btn btn-primary btn-sm" for="fileInput">Choose File</label>
+          <input type="file" id="fileInput" accept=".log,.txt" />
+          <span class="upload-sep">or</span>
+          <button class="btn btn-secondary btn-sm" id="btnSample">Analyse sample logs</button>
+        </div>
+        <div id="spinner" class="spinner hidden">⚙ Analysing…</div>
+        <div id="analysisTimestamp" class="section-desc hidden"></div>
       </div>
-      <div id="spinner" class="spinner hidden">⚙ Analysing…</div>
-    </section>
 
-    <!-- ---- Overview cards ---- -->
-    <section id="overview">
-      <h2 class="section-title">Overview</h2>
-      <div class="cards" id="overviewCards">
-        <div class="card">
-          <div class="card-value" id="cardTotalRequests">—</div>
-          <div class="card-label">Total Requests</div>
-        </div>
-        <div class="card">
-          <div class="card-value" id="cardBuckets">—</div>
-          <div class="card-label">IP/Hour Buckets</div>
-        </div>
-        <div class="card card-danger">
-          <div class="card-value" id="cardAnomalies">—</div>
-          <div class="card-label">Anomalous Buckets</div>
-        </div>
-        <div class="card card-ok">
-          <div class="card-value" id="cardNormal">—</div>
-          <div class="card-label">Normal Buckets</div>
-        </div>
-        <div class="card card-warn">
-          <div class="card-value" id="cardAnomalyRate">—</div>
-          <div class="card-label">Anomaly Rate (%)</div>
+      <!-- KPI Cards -->
+      <div>
+        <div class="section-title">📊 Audit Summary</div>
+        <div class="cards" id="overviewCards">
+          <div class="card card-accent">
+            <div class="card-icon">📄</div>
+            <div class="card-value" id="cardTotalRequests">—</div>
+            <div class="card-label">Total Log Entries</div>
+          </div>
+          <div class="card">
+            <div class="card-icon">🖥</div>
+            <div class="card-value" id="cardBuckets">—</div>
+            <div class="card-label">IP/Hour Buckets</div>
+          </div>
+          <div class="card card-danger">
+            <div class="card-icon">🚨</div>
+            <div class="card-value" id="cardAnomalies">—</div>
+            <div class="card-label">Anomalous Buckets</div>
+          </div>
+          <div class="card card-ok">
+            <div class="card-icon">✅</div>
+            <div class="card-value" id="cardNormal">—</div>
+            <div class="card-label">Normal Buckets</div>
+          </div>
+          <div class="card card-warn">
+            <div class="card-icon">⚠️</div>
+            <div class="card-value" id="cardAnomalyRate">—</div>
+            <div class="card-label">Anomaly Rate</div>
+          </div>
+          <div class="card card-danger" id="cardCritical" style="display:none;">
+            <div class="card-icon">🔴</div>
+            <div class="card-value" id="cardCriticalVal">—</div>
+            <div class="card-label">Critical Risk</div>
+          </div>
         </div>
       </div>
-    </section>
 
-    <!-- ---- Charts ---- -->
-    <section id="charts">
-      <h2 class="section-title">System Risk Timeline &amp; Traffic Breakdown</h2>
-      <div class="chart-grid">
+      <!-- Risk Timeline + Distribution -->
+      <div class="chart-grid-wide">
         <div class="chart-card">
-          <h3>Risk Score Over Time</h3>
+          <h3>Risk Score Timeline</h3>
           <canvas id="timelineChart"></canvas>
         </div>
         <div class="chart-card">
-          <h3>HTTP Status Distribution</h3>
+          <h3>Risk Level Distribution</h3>
+          <canvas id="riskDistChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Traffic charts -->
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>HTTP Status Code Distribution</h3>
           <canvas id="statusChart"></canvas>
         </div>
         <div class="chart-card">
-          <h3>Request Methods</h3>
+          <h3>Request Method Breakdown</h3>
           <canvas id="methodChart"></canvas>
         </div>
         <div class="chart-card">
-          <h3>Normal vs Anomalous</h3>
+          <h3>Normal vs Anomalous Buckets</h3>
           <canvas id="pieChart"></canvas>
         </div>
+        <div class="chart-card">
+          <h3>Top 10 Endpoints by Request Volume</h3>
+          <canvas id="endpointChart"></canvas>
+        </div>
       </div>
+
     </section>
 
-    <!-- ---- Anomaly table ---- -->
-    <section id="anomalies">
-      <h2 class="section-title">🚨 Top Suspicious Events</h2>
-      <p class="section-desc">Ranked by anomaly score (higher = more suspicious).
-         Each row represents one IP address within a one-hour time window.</p>
+    <!-- ================================================================
+         TAB 2 — ANOMALY EXPLORER
+         ================================================================ -->
+    <section class="tab-panel" id="tab-anomalies">
 
-      <div class="table-controls">
-        <input type="text" id="tableSearch" placeholder="Filter by IP or hour…" />
+      <div>
+        <div class="section-title">🔍 Anomaly Explorer</div>
+        <p class="section-desc">
+          Ranked by anomaly score (higher = more suspicious). Each row is one IP address
+          within a one-hour time window. Aligned with ISACA IS Audit Standard 1205 — Evidence.
+        </p>
       </div>
 
-      <div class="table-wrapper">
-        <table id="anomalyTable">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>IP Address</th>
-              <th>Hour Bucket (UTC)</th>
-              <th>Risk Score</th>
-              <th>Requests/hr</th>
-              <th>Error Rate</th>
-              <th>Unique Endpoints</th>
-              <th>POST Ratio</th>
-              <th>Off-Hours</th>
-              <th>Scanner UA</th>
-            </tr>
-          </thead>
-          <tbody id="anomalyBody">
-            <tr><td colspan="10" class="placeholder">Run an analysis to see results.</td></tr>
-          </tbody>
-        </table>
+      <!-- Top anomalous IPs chart -->
+      <div class="chart-grid">
+        <div class="chart-card">
+          <h3>Top Anomalous IPs by Risk Score</h3>
+          <canvas id="topIpsChart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Hourly Activity Heatmap</h3>
+          <div id="heatmapContainer">
+            <div class="heatmap-grid" id="heatmapGrid"></div>
+            <div class="heatmap-labels" id="heatmapLabels"></div>
+          </div>
+        </div>
       </div>
+
+      <!-- Anomaly table -->
+      <div>
+        <div class="table-controls">
+          <input type="text" id="tableSearch" placeholder="🔍 Filter by IP or hour…" />
+          <select id="riskFilter">
+            <option value="">All Risk Levels</option>
+            <option value="critical">Critical (&ge;70%)</option>
+            <option value="high">High (50–70%)</option>
+            <option value="medium">Medium (30–50%)</option>
+            <option value="low">Low (&lt;30%)</option>
+          </select>
+          <select id="pageSizeSelect">
+            <option value="20">20 per page</option>
+            <option value="50">50 per page</option>
+            <option value="100">100 per page</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" id="btnExportTableCsv">⬇ Export CSV</button>
+        </div>
+
+        <div class="table-wrapper">
+          <table id="anomalyTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th data-sort="ip_address">IP Address</th>
+                <th data-sort="hour_bucket">Hour Bucket (UTC)</th>
+                <th data-sort="anomaly_score">Risk Score ↕</th>
+                <th data-sort="requests_per_hour">Req/hr ↕</th>
+                <th data-sort="error_rate">Error Rate ↕</th>
+                <th data-sort="unique_endpoints">Endpoints ↕</th>
+                <th data-sort="post_ratio">POST Ratio</th>
+                <th>Off-Hours</th>
+                <th>Scanner UA</th>
+                <th>Risk Level</th>
+              </tr>
+            </thead>
+            <tbody id="anomalyBody">
+              <tr><td colspan="11" class="placeholder">Run an analysis to see results.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination" id="tablePagination" style="display:none;">
+          <span id="paginationInfo"></span>
+          <div class="pagination-btns" id="paginationBtns"></div>
+        </div>
+      </div>
+
     </section>
 
-  </main>
-</div>
+    <!-- ================================================================
+         TAB 3 — EVIDENCE & REPORTS (ISACA aligned)
+         ================================================================ -->
+    <section class="tab-panel" id="tab-evidence">
+
+      <div>
+        <div class="section-title">📋 Evidence &amp; Audit Findings</div>
+        <p class="section-desc">
+          Audit findings and evidence documentation aligned with ISACA IS Audit Standards
+          (ISAS) — including IS Audit Standard 1001 (Audit Charter), 1205 (Evidence),
+          and COBIT 2019 control domains.
+        </p>
+      </div>
+
+      <!-- Audit metadata -->
+      <div class="audit-summary" id="auditSummaryPanel">
+        <div class="audit-summary-row">
+          <div class="audit-summary-label">Engagement</div>
+          <div id="auditEngagement">—</div>
+        </div>
+        <div class="audit-summary-row">
+          <div class="audit-summary-label">Analysis Date</div>
+          <div id="auditDate">—</div>
+        </div>
+        <div class="audit-summary-row">
+          <div class="audit-summary-label">Auditor</div>
+          <div id="auditAuditor">{{ user.username }} ({{ user.role }})</div>
+        </div>
+        <div class="audit-summary-row">
+          <div class="audit-summary-label">Total Log Entries</div>
+          <div id="auditTotalEntries">—</div>
+        </div>
+        <div class="audit-summary-row">
+          <div class="audit-summary-label">Anomaly Rate</div>
+          <div id="auditAnomalyRate">—</div>
+        </div>
+        <div class="audit-summary-row">
+          <div class="audit-summary-label">Overall Risk Rating</div>
+          <div id="auditOverallRisk">—</div>
+        </div>
+      </div>
+
+      <!-- COBIT control domains -->
+      <div>
+        <div class="section-title">🏛 COBIT 2019 Control Domain Assessment</div>
+        <div class="control-domains" id="controlDomains">
+          <div class="control-domain">
+            <h5>DSS05 — Managed Security Services</h5>
+            <div class="domain-score domain-ok" id="dss05Score">—</div>
+            <div class="domain-bar"><div class="domain-bar-fill" id="dss05Bar" style="width:0%;background:var(--success)"></div></div>
+            <p style="font-size:.78rem;color:var(--text-muted);margin-top:6px;" id="dss05Desc">Awaiting analysis…</p>
+          </div>
+          <div class="control-domain">
+            <h5>MEA02 — Managed System of Internal Control</h5>
+            <div class="domain-score domain-ok" id="mea02Score">—</div>
+            <div class="domain-bar"><div class="domain-bar-fill" id="mea02Bar" style="width:0%;background:var(--success)"></div></div>
+            <p style="font-size:.78rem;color:var(--text-muted);margin-top:6px;" id="mea02Desc">Awaiting analysis…</p>
+          </div>
+          <div class="control-domain">
+            <h5>DSS01 — Managed Operations</h5>
+            <div class="domain-score domain-ok" id="dss01Score">—</div>
+            <div class="domain-bar"><div class="domain-bar-fill" id="dss01Bar" style="width:0%;background:var(--success)"></div></div>
+            <p style="font-size:.78rem;color:var(--text-muted);margin-top:6px;" id="dss01Desc">Awaiting analysis…</p>
+          </div>
+          <div class="control-domain">
+            <h5>APO12 — Managed Risk</h5>
+            <div class="domain-score domain-ok" id="apo12Score">—</div>
+            <div class="domain-bar"><div class="domain-bar-fill" id="apo12Bar" style="width:0%;background:var(--success)"></div></div>
+            <p style="font-size:.78rem;color:var(--text-muted);margin-top:6px;" id="apo12Desc">Awaiting analysis…</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audit findings cards -->
+      <div>
+        <div class="section-title">🔎 Key Audit Findings</div>
+        <div class="findings-grid" id="findingsGrid">
+          <div class="finding-card">
+            <div class="finding-card-header">
+              <h4>Run an analysis to generate findings</h4>
+            </div>
+            <p>Upload a log file or use the sample logs to generate ISACA-aligned audit findings.</p>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ================================================================
+         TAB 4 — EXPORT & VISUALISE
+         ================================================================ -->
+    <section class="tab-panel" id="tab-export">
+
+      <div>
+        <div class="section-title">📤 Export &amp; Advanced Visualisation</div>
+        <p class="section-desc">
+          Export analysis results in multiple formats, or explore advanced visualisations
+          to support audit evidence collection and reporting.
+        </p>
+      </div>
+
+      <!-- Export cards -->
+      <div class="export-grid">
+        <div class="export-card">
+          <div class="export-icon">📊</div>
+          <h4>Export as CSV</h4>
+          <p>Download the full IP/hour bucket results table as a comma-separated values file, suitable for Excel or audit tools.</p>
+          <a class="btn btn-success" id="btnDownloadCsv" href="/api/export/csv">⬇ Download CSV</a>
+        </div>
+        <div class="export-card">
+          <div class="export-icon">📄</div>
+          <h4>Export as JSON</h4>
+          <p>Download the complete analysis payload as structured JSON, including all statistics, charts data, and metadata.</p>
+          <a class="btn btn-primary" id="btnDownloadJson" href="/api/export/json">⬇ Download JSON</a>
+        </div>
+        <div class="export-card">
+          <div class="export-icon">🖨</div>
+          <h4>Print / PDF Report</h4>
+          <p>Open a printable audit summary report of the current analysis, formatted for documentation and stakeholder review.</p>
+          <button class="btn btn-secondary" id="btnPrintReport">🖨 Print Report</button>
+        </div>
+        <div class="export-card">
+          <div class="export-icon">📋</div>
+          <h4>Copy Summary to Clipboard</h4>
+          <p>Copy a text summary of the key audit metrics to the clipboard for quick sharing or pasting into audit workpapers.</p>
+          <button class="btn btn-secondary" id="btnCopySummary">📋 Copy Summary</button>
+        </div>
+      </div>
+
+      <!-- Advanced visualisations -->
+      <div>
+        <div class="section-title">📈 Advanced Analytics</div>
+        <div class="chart-grid">
+          <div class="chart-card">
+            <h3>Top 10 Source IPs by Request Volume</h3>
+            <canvas id="topIpsVolumeChart"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Anomaly Score Distribution (Histogram)</h3>
+            <canvas id="scoreHistogramChart"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Error Rate vs Request Volume (Scatter)</h3>
+            <canvas id="scatterChart"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Off-Hours vs Business Hours Traffic</h3>
+            <canvas id="offHoursChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </div><!-- /.content-area -->
+</div><!-- /.workbench-main -->
+
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer"></div>
 
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>
