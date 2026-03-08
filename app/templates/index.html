@@ -49,7 +49,7 @@
   </ul>
 
   <div class="sidebar-footer">
-    ISACA IT Audit Framework &mdash; v2.0
+    IT Audit Framework &mdash; v2.0
   </div>
 </nav>
 
@@ -191,7 +191,7 @@
         <div class="section-title">🔍 Anomaly Explorer</div>
         <p class="section-desc">
           Ranked by anomaly score (higher = more suspicious). Each row is one IP address
-          within a one-hour time window. Aligned with ISACA IS Audit Standard 1205 — Evidence.
+          within a one-hour time window, evaluated by the 4-model ensemble detector.
         </p>
       </div>
 
@@ -261,16 +261,16 @@
     </section>
 
     <!-- ================================================================
-         TAB 3 — EVIDENCE & REPORTS (ISACA aligned)
+         TAB 3 — EVIDENCE & REPORTS
          ================================================================ -->
     <section class="tab-panel" id="tab-evidence">
 
       <div>
         <div class="section-title">📋 Evidence &amp; Audit Findings</div>
         <p class="section-desc">
-          Audit findings and evidence documentation aligned with ISACA IS Audit Standards
-          (ISAS) — including IS Audit Standard 1001 (Audit Charter), 1205 (Evidence),
-          and COBIT 2019 control domains.
+          Audit findings and evidence documentation aligned with IT Audit Standards
+          — including IS Audit Standard 1001 (Audit Charter), 1205 (Evidence),
+          COBIT 2019 control domains, and ISO 27001 Annex A controls.
         </p>
       </div>
 
@@ -302,6 +302,15 @@
         </div>
       </div>
 
+      <!-- Behavioral Profiles -->
+      <div>
+        <div class="section-title">🧠 IP Behavioral Profiles</div>
+        <p class="section-desc">Per-IP behavioral fingerprint derived from all activity in the log. Helps distinguish attack patterns from normal usage.</p>
+        <div class="profiles-grid" id="profilesGrid">
+          <div class="finding-card"><p style="color:var(--text-muted)">Run an analysis to see IP behavioral profiles.</p></div>
+        </div>
+      </div>
+
       <!-- Attack chains -->
       <div>
         <div class="section-title">🔗 Attack Chains</div>
@@ -313,7 +322,7 @@
 
       <!-- COBIT control domains -->
       <div>
-        <div class="section-title">🏛 COBIT 2019 Control Domain Assessment</div>
+        <div class="section-title">🏛 Control Domain Assessment (COBIT 2019)</div>
         <div class="control-domains" id="controlDomains">
           <div class="control-domain">
             <h5>DSS05 — Managed Security Services</h5>
@@ -350,7 +359,7 @@
             <div class="finding-card-header">
               <h4>Run an analysis to generate findings</h4>
             </div>
-            <p>Upload a log file or use the sample logs to generate ISACA-aligned audit findings.</p>
+            <p>Upload a log file or use the sample logs to generate audit findings.</p>
           </div>
         </div>
       </div>
@@ -456,7 +465,7 @@
     </div>
 
     <div class="drill-section" id="drillModelsSection">
-      <div class="drill-section-title">🤖 Per-Model Scores</div>
+      <div class="drill-section-title">🤖 Per-Model Scores (4-Model Ensemble)</div>
       <div id="drillModelScores"></div>
     </div>
 

@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from pipeline.feature_engineering import engineer_features, get_feature_matrix, _FEATURE_COLUMNS
 from pipeline.log_parser import parse_log_lines
+from pipeline.baselines import build_behavioral_profiles
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -124,3 +125,92 @@ class TestGetFeatureMatrix:
         features = engineer_features(df)
         X = get_feature_matrix(features)
         assert np.issubdtype(X.dtype, np.floating)
+
+
+# ── Behavioral profiling tests ───────────────────────────────────────────────
+
+class TestBuildBehavioralProfiles:
+    """Tests for pipeline.baselines.build_behavioral_profiles."""
+
+    def _features(self, lines):
+        return engineer_features(_make_df(lines))
+
+    def test_returns_dict(self):
+        features = self._features(NORMAL_LINES)
+        profiles = build_behavioral_profiles(features)
+        assert isinstance(profiles, dict)
+
+    def test_keys_are_ip_strings(self):
+        features = self._features(NORMAL_LINES)
+        profiles = build_behavioral_profiles(features)
+        for key in profiles:
+            assert isinstance(key, str)
+
+    def test_one_profile_per_ip(self):
+        features = self._features(NORMAL_LINES)
+        profiles = build_behavioral_profiles(features)
+        # NORMAL_LINES has two distinct IPs (10.0.0.1 and 10.0.0.2)
+        assert len(profiles) == 2
+
+    def test_profile_has_required_fields(self):
+        features = self._features(NORMAL_LINES)
+        profile = list(build_behavioral_profiles(features).values())[0]
+        required = {
+            "total_observations",
+            "off_hours_ratio",
+            "avg_requests_per_hour",
+            "max_requests_per_hour",
+            "avg_error_rate",
+            "max_error_rate",
+            "avg_bytes_sent",
+            "avg_post_ratio",
+            "has_scanner_activity",
+            "category",
+        }
+        assert required.issubset(set(profile.keys()))
+
+    def test_normal_ip_categorised_as_normal(self):
+        features = self._features(NORMAL_LINES)
+        profiles = build_behavioral_profiles(features)
+        for profile in profiles.values():
+            assert profile["category"] == "Normal"
+
+    def test_scanner_ip_categorised_as_scanner(self):
+        features = self._features(ATTACK_LINES)
+        profiles = build_behavioral_profiles(features)
+        assert profiles["192.168.99.1"]["category"] == "Scanner"
+
+    def test_has_scanner_activity_true_for_attack_ip(self):
+        features = self._features(ATTACK_LINES)
+        profiles = build_behavioral_profiles(features)
+        assert profiles["192.168.99.1"]["has_scanner_activity"] is True
+
+    def test_has_scanner_activity_false_for_normal_ip(self):
+        features = self._features(NORMAL_LINES)
+        profiles = build_behavioral_profiles(features)
+        for profile in profiles.values():
+            assert profile["has_scanner_activity"] is False
+
+    def test_empty_dataframe_returns_empty_dict(self):
+        empty = engineer_features(pd.DataFrame())
+        profiles = build_behavioral_profiles(empty)
+        assert profiles == {}
+
+    def test_baseline_embedded_when_provided(self):
+        features = self._features(NORMAL_LINES)
+        ip_baselines = {"10.0.0.1": {"requests_per_hour_median": 2.0}}
+        profiles = build_behavioral_profiles(features, ip_baselines=ip_baselines)
+        assert "baseline" in profiles["10.0.0.1"]
+        assert profiles["10.0.0.1"]["baseline"]["requests_per_hour_median"] == 2.0
+
+    def test_baseline_absent_when_not_provided(self):
+        features = self._features(NORMAL_LINES)
+        profiles = build_behavioral_profiles(features)
+        for profile in profiles.values():
+            assert "baseline" not in profile
+
+    def test_total_observations_correct(self):
+        features = self._features(NORMAL_LINES)
+        profiles = build_behavioral_profiles(features)
+        # 10.0.0.1 has 2 requests in the same hour → 1 observation row
+        assert profiles["10.0.0.1"]["total_observations"] == 1

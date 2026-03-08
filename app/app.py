@@ -66,6 +66,7 @@ from pipeline.baselines import (
     compute_global_baselines,
     compute_ip_baselines,
     add_baseline_features,
+    build_behavioral_profiles,
 )
 from pipeline.attack_chain import build_chains
 from model.anomaly_detector import run_full_analysis
@@ -220,7 +221,7 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
             "anomaly" if lbl else "normal"
             for lbl in ensemble_result["ensemble_label"]
         ]
-        for model_name in ("isolation_forest", "lof", "ocsvm"):
+        for model_name in ("isolation_forest", "lof", "ocsvm", "autoencoder"):
             results_df[f"score_{model_name}"] = (
                 ensemble_result["per_model_scores"][model_name]
             )
@@ -249,6 +250,9 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
 
     # ── Attack chains ────────────────────────────────────────────────────────
     chains = build_chains(anomalies_df)
+
+    # ── Behavioral profiles ──────────────────────────────────────────────────
+    behavioral_profiles = build_behavioral_profiles(features_df, ip_baselines=ip_baselines)
 
     top_anomalies = _dataframe_to_records(anomalies_df.head(20))
     all_results = _dataframe_to_records(results_df)
@@ -364,6 +368,7 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
         "top_anomalous_ips": top_anomalous_ips,
         "top_endpoints": top_endpoints,
         "chains": chains,
+        "behavioral_profiles": behavioral_profiles,
     }
     return summary
 
@@ -508,7 +513,7 @@ def analyze():
             for rec in result.get("all_results", []):
                 model_scores = {
                     m: rec.get(f"score_{m}")
-                    for m in ("isolation_forest", "lof", "ocsvm")
+                    for m in ("isolation_forest", "lof", "ocsvm", "autoencoder")
                     if rec.get(f"score_{m}") is not None
                 }
                 records_to_save.append({

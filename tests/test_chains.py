@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from pipeline.attack_chain import build_chains
+from pipeline.attack_chain import build_chains, classify_attack_stage
 
 
 # ---------------------------------------------------------------------------
@@ -165,3 +165,124 @@ class TestBuildChainsMetrics:
         df = _df(("192.168.1.1", "2024-01-01 01:00", 0.8))
         chains = build_chains(df)
         assert "192.168.1.1" in chains[0]["narrative"]
+
+    def test_chain_includes_stages_field(self):
+        df = _df(("1.2.3.4", "2024-01-01 01:00", 0.8))
+        chain = build_chains(df)[0]
+        assert "stages" in chain
+        assert isinstance(chain["stages"], list)
+
+    def test_chain_includes_tactic_field(self):
+        df = _df(("1.2.3.4", "2024-01-01 01:00", 0.8))
+        chain = build_chains(df)[0]
+        assert "tactic" in chain
+        assert isinstance(chain["tactic"], str)
+
+    def test_narrative_contains_tactic(self):
+        df = _df(("1.2.3.4", "2024-01-01 01:00", 0.8))
+        chain = build_chains(df)[0]
+        assert "Tactic:" in chain["narrative"]
+
+
+# ---------------------------------------------------------------------------
+# classify_attack_stage
+# ---------------------------------------------------------------------------
+
+class TestClassifyAttackStage:
+    def test_scanner_ua_maps_to_reconnaissance(self):
+        assert classify_attack_stage(["SCANNER_UA"]) == "Reconnaissance"
+
+    def test_high_error_rate_maps_to_scanning_exploitation(self):
+        assert classify_attack_stage(["HIGH_ERROR_RATE"]) == "Scanning/Exploitation"
+
+    def test_volume_spike_maps_to_volumetric_attack(self):
+        assert classify_attack_stage(["VOLUME_SPIKE"]) == "Volumetric Attack"
+
+    def test_bytes_spike_maps_to_data_exfiltration(self):
+        assert classify_attack_stage(["BYTES_SPIKE"]) == "Data Exfiltration"
+
+    def test_off_hours_maps_to_suspicious_activity(self):
+        assert classify_attack_stage(["OFF_HOURS"]) == "Suspicious Activity"
+
+    def test_off_hours_combined_maps_to_suspicious_activity(self):
+        assert classify_attack_stage(["OFF_HOURS_COMBINED"]) == "Suspicious Activity"
+
+    def test_empty_reasons_returns_unknown(self):
+        assert classify_attack_stage([]) == "Unknown"
+
+    def test_unknown_reason_code_returns_unknown(self):
+        assert classify_attack_stage(["SOME_UNKNOWN_CODE"]) == "Unknown"
+
+    def test_scanner_takes_priority_over_off_hours(self):
+        """SCANNER_UA has higher priority than OFF_HOURS."""
+        assert classify_attack_stage(["SCANNER_UA", "OFF_HOURS"]) == "Reconnaissance"
+
+    def test_data_exfiltration_priority_over_suspicious_activity(self):
+        assert classify_attack_stage(["BYTES_SPIKE", "OFF_HOURS"]) == "Data Exfiltration"
+
+    def test_multiple_same_stage_returns_one_stage(self):
+        result = classify_attack_stage(["OFF_HOURS", "OFF_HOURS_COMBINED"])
+        assert result == "Suspicious Activity"
+
+
+# ---------------------------------------------------------------------------
+# Tactic classification via build_chains (with explanations_json)
+# ---------------------------------------------------------------------------
+
+def _df_with_exp(*rows) -> pd.DataFrame:
+    """Build anomalies DataFrame including explanations_json.
+
+    Each row is (ip, hour_str, score, reasons_list) where reasons_list is a
+    list of reason-code strings like ["SCANNER_UA"].
+    """
+    import json as _json
+    return pd.DataFrame(
+        {
+            "ip_address": [r[0] for r in rows],
+            "hour_bucket": pd.to_datetime([r[1] for r in rows]),
+            "anomaly_score": [r[2] for r in rows],
+            "ensemble_score": [r[2] for r in rows],
+            "explanations_json": [
+                # reasons is stored as a list of [code, description] pairs;
+                # we reuse the code string as a placeholder description here.
+                _json.dumps({"reasons": [[c, c] for c in r[3]], "feature_deviations": []})
+                for r in rows
+            ],
+        }
+    )
+
+
+class TestChainTacticClassification:
+    def test_single_scanner_chain_tactic_reconnaissance(self):
+        df = _df_with_exp(("1.2.3.4", "2024-01-01 01:00", 0.9, ["SCANNER_UA"]))
+        chain = build_chains(df)[0]
+        assert chain["tactic"] == "Reconnaissance"
+
+    def test_single_exfil_chain_tactic_data_exfiltration(self):
+        df = _df_with_exp(("1.2.3.4", "2024-01-01 01:00", 0.9, ["BYTES_SPIKE"]))
+        chain = build_chains(df)[0]
+        assert chain["tactic"] == "Data Exfiltration"
+
+    def test_mixed_stages_yields_multi_stage_attack(self):
+        df = _df_with_exp(
+            ("1.2.3.4", "2024-01-01 01:00", 0.9, ["SCANNER_UA"]),
+            ("1.2.3.4", "2024-01-01 02:00", 0.8, ["BYTES_SPIKE"]),
+        )
+        chain = build_chains(df, time_gap_hours=2)[0]
+        assert chain["tactic"] == "Multi-Stage Attack"
+
+    def test_no_explanations_tactic_unknown(self):
+        """Chains built without explanations_json default to Unknown tactic."""
+        df = _df(("1.2.3.4", "2024-01-01 01:00", 0.8))
+        chain = build_chains(df)[0]
+        assert chain["tactic"] == "Unknown"
+
+    def test_stages_list_deduplicated(self):
+        """Two anomalies with the same stage → only one unique stage in chain."""
+        df = _df_with_exp(
+            ("1.2.3.4", "2024-01-01 01:00", 0.9, ["SCANNER_UA"]),
+            ("1.2.3.4", "2024-01-01 02:00", 0.8, ["SCANNER_UA"]),
+        )
+        chain = build_chains(df, time_gap_hours=2)[0]
+        assert chain["stages"] == ["Reconnaissance"]
+        assert chain["tactic"] == "Reconnaissance"
