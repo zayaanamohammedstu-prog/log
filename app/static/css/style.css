@@ -631,7 +631,7 @@ td.placeholder { text-align: center; color: var(--text-muted); padding: 40px; }
 }
 
 /* ============================================================
-   ISACA COMPLIANCE / EVIDENCE PANEL
+   COMPLIANCE / EVIDENCE PANEL
    ============================================================ */
 .findings-grid {
   display: grid;
@@ -694,7 +694,7 @@ td.placeholder { text-align: center; color: var(--text-muted); padding: 40px; }
 .audit-summary-row > div { padding: 10px 16px; }
 .audit-summary-label { color: var(--text-muted); font-weight: 500; background: var(--surface2); }
 
-/* ISACA control domains */
+/* Control domains */
 .control-domains {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -887,6 +887,91 @@ td.placeholder { text-align: center; color: var(--text-muted); padding: 40px; }
 .chain-meta { display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
 .chain-meta-item { font-size: .75rem; color: var(--text-muted); }
 .chain-narrative { font-style: italic; color: var(--text-muted); margin-top: 6px; font-size: .8rem; }
+
+/* ============================================================
+   BEHAVIORAL PROFILE CARDS
+   ============================================================ */
+.profiles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 8px;
+}
+.profile-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+}
+.profile-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 8px;
+}
+.profile-ip {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: .82rem;
+  color: var(--accent);
+}
+.profile-category {
+  font-size: .72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.profile-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+.profile-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.profile-stat-label {
+  font-size: .68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.profile-stat-val {
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ============================================================
+   ATTACK CHAIN — TACTIC / STAGE CHIPS
+   ============================================================ */
+.chain-tactic-badge {
+  font-size: .72rem;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 12px;
+  background: rgba(88,166,255,.12);
+  color: var(--accent);
+  border: 1px solid rgba(88,166,255,.25);
+}
+.chain-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 6px 0 4px;
+}
+.stage-chip {
+  font-size: .70rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--surface2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
 
 /* ============================================================
    RUN SELECTOR

@@ -716,7 +716,7 @@ function renderTable(rows) {
 }
 
 // ============================================================
-// RENDER: EVIDENCE / ISACA PANEL
+// RENDER: EVIDENCE PANEL
 // ============================================================
 function renderEvidence(data) {
   const engagement = document.getElementById("engagementSelect")?.value || "—";
@@ -779,7 +779,7 @@ function renderEvidence(data) {
       title: "Critical Risk — Immediate Action Required",
       severity: "badge-critical",
       desc: `${critCount} IP/hour bucket(s) scored Critical risk (≥70%). These represent the most anomalous behaviour in the log and require immediate investigation.`,
-      ref: "ISACA IS Standard 1205.A2 — Sufficiency of Evidence",
+      ref: "IT Audit Standard 1205.A2 — Sufficiency of Evidence",
       domain: "DSS05.07 — Monitor the infrastructure",
     });
   }
@@ -789,7 +789,7 @@ function renderEvidence(data) {
       title: "High Anomaly Rate",
       severity: "badge-danger",
       desc: `Overall anomaly rate is ${data.anomaly_rate?.toFixed(1)}%, which exceeds the 10% threshold. This may indicate a systemic security issue or ongoing attack.`,
-      ref: "ISACA IS Standard 1402 — Reporting",
+      ref: "IT Audit Standard 1402 — Reporting",
       domain: "APO12 — Managed Risk",
     });
   }
@@ -800,7 +800,7 @@ function renderEvidence(data) {
       title: "Scanner / Automated Tool Activity Detected",
       severity: "badge-danger",
       desc: `${scannerRows.length} bucket(s) contain user-agents associated with scanning or attack tools (e.g., Nikto, sqlmap, Nmap). These represent a direct threat to system integrity.`,
-      ref: "ISACA IS Standard 1205.B — Reliability of Evidence",
+      ref: "IT Audit Standard 1205.B — Reliability of Evidence",
       domain: "DSS05.02 — Manage network and connectivity security",
     });
   }
@@ -811,7 +811,7 @@ function renderEvidence(data) {
       title: "Off-Hours Anomalous Activity",
       severity: "badge-warn",
       desc: `${offHoursAnomalies.length} anomalous IP/hour bucket(s) occurred outside business hours (22:00–06:00). This may indicate unauthorised access or insider threat activity.`,
-      ref: "ISACA IS Standard 1001.B — Organisational Independence",
+      ref: "IT Audit Standard 1001.B — Organisational Independence",
       domain: "DSS05.04 — Manage user identity and logical access",
     });
   }
@@ -821,7 +821,7 @@ function renderEvidence(data) {
       title: "No Significant Findings",
       severity: "badge-ok",
       desc: "No significant anomalies were detected in the analysed log data. Anomaly rate is within acceptable thresholds.",
-      ref: "ISACA IS Standard 1402 — Reporting",
+      ref: "IT Audit Standard 1402 — Reporting",
       domain: "MEA02 — Managed System of Internal Control",
     });
   }
@@ -905,6 +905,7 @@ function openDrillDown(row) {
     ["Isolation Forest", row.score_isolation_forest],
     ["LOF",              row.score_lof],
     ["One-Class SVM",    row.score_ocsvm],
+    ["Autoencoder",      row.score_autoencoder],
   ];
   modelsEl.innerHTML = models.map(([name, score]) => {
     if (score === undefined || score === null) return "";
@@ -975,16 +976,73 @@ function renderChains(chains) {
   const sevColor = { Critical: "#f85149", High: "#d29922", Medium: "#3fb950" };
   listEl.innerHTML = _chains.map(c => {
     const color = sevColor[c.severity] || "var(--text-muted)";
+    const tacticBadge = c.tactic && c.tactic !== "Unknown"
+      ? `<span class="chain-tactic-badge">${c.tactic}</span>` : "";
+    const stageChips = (c.stages || []).filter(s => s !== "Unknown")
+      .map(s => `<span class="stage-chip">${s}</span>`).join("");
     return `<div class="chain-card">
       <div class="chain-card-header">
         <code class="chain-card-ip">${c.ip_address}</code>
-        <span class="badge" style="background:${color}22;color:${color};border:1px solid ${color}44;">${c.severity || "Unknown"}</span>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <span class="badge" style="background:${color}22;color:${color};border:1px solid ${color}44;">${c.severity || "Unknown"}</span>
+          ${tacticBadge}
+        </div>
       </div>
+      ${stageChips ? `<div class="chain-stages">${stageChips}</div>` : ""}
       <div class="chain-narrative">${c.narrative || ""}</div>
       <div class="chain-meta">
         <span class="chain-meta-item">🔗 ${c.anomaly_count} anomaly bucket(s)</span>
         <span class="chain-meta-item">⏱ ${fmtHour(c.start_time)} → ${fmtHour(c.end_time)}</span>
         <span class="chain-meta-item">📊 Max score: ${((c.max_score || 0) * 100).toFixed(1)}%</span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// ============================================================
+// RENDER: BEHAVIORAL PROFILES
+// ============================================================
+function renderProfiles(profiles) {
+  const grid = document.getElementById("profilesGrid");
+  if (!grid) return;
+  if (!profiles || Object.keys(profiles).length === 0) {
+    grid.innerHTML = `<div class="finding-card"><p style="color:var(--text-muted)">No behavioral profiles available.</p></div>`;
+    return;
+  }
+
+  const catColor = {
+    "Scanner":           "#f85149",
+    "Credential Attack": "#d29922",
+    "Data Exfiltration": "#bc8cff",
+    "High Volume":       "#e8a14f",
+    "Suspicious Timing": "#d29922",
+    "Normal":            "#3fb950",
+  };
+
+  // Sort: anomalous categories first, then alphabetically by IP
+  const order = ["Scanner","Credential Attack","Data Exfiltration","High Volume","Suspicious Timing","Normal"];
+  const entries = Object.entries(profiles).sort(([ipA, a], [ipB, b]) => {
+    const catDiff = order.indexOf(a.category) - order.indexOf(b.category);
+    return catDiff !== 0 ? catDiff : ipA.localeCompare(ipB);
+  });
+
+  const fmtNum = (v, decimals = 2) => (v == null ? "—" : Number(v).toFixed(decimals));
+  const fmtPct = (v, decimals = 1) => (v == null ? "—" : (Number(v) * 100).toFixed(decimals) + "%");
+
+  grid.innerHTML = entries.map(([ip, p]) => {
+    const color = catColor[p.category] || "var(--text-muted)";
+    return `<div class="profile-card">
+      <div class="profile-card-header">
+        <code class="profile-ip">${ip}</code>
+        <span class="profile-category" style="color:${color};border-color:${color}40;background:${color}15;">${p.category ?? "—"}</span>
+      </div>
+      <div class="profile-stats">
+        <div class="profile-stat"><span class="profile-stat-label">Avg Req/hr</span><span class="profile-stat-val">${fmtNum(p.avg_requests_per_hour)}</span></div>
+        <div class="profile-stat"><span class="profile-stat-label">Peak Req/hr</span><span class="profile-stat-val">${fmtNum(p.max_requests_per_hour)}</span></div>
+        <div class="profile-stat"><span class="profile-stat-label">Avg Error Rate</span><span class="profile-stat-val">${fmtPct(p.avg_error_rate)}</span></div>
+        <div class="profile-stat"><span class="profile-stat-label">Off-Hours</span><span class="profile-stat-val">${fmtPct(p.off_hours_ratio, 0)}</span></div>
+        <div class="profile-stat"><span class="profile-stat-label">POST Ratio</span><span class="profile-stat-val">${fmtPct(p.avg_post_ratio, 0)}</span></div>
+        <div class="profile-stat"><span class="profile-stat-label">Scanner UA</span><span class="profile-stat-val">${p.has_scanner_activity ? "⚠ Yes" : "No"}</span></div>
       </div>
     </div>`;
   }).join("");
@@ -1005,6 +1063,7 @@ function renderResults(data) {
   renderTable(_allAnomalies);
   renderEvidence(data);
   renderChains(data.chains);
+  renderProfiles(data.behavioral_profiles);
 
   // Show run ID badge in topbar if available
   if (data.run_id) {

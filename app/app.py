@@ -221,7 +221,7 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
             "anomaly" if lbl else "normal"
             for lbl in ensemble_result["ensemble_label"]
         ]
-        for model_name in ("isolation_forest", "lof", "ocsvm"):
+        for model_name in ("isolation_forest", "lof", "ocsvm", "autoencoder"):
             results_df[f"score_{model_name}"] = (
                 ensemble_result["per_model_scores"][model_name]
             )
@@ -513,7 +513,7 @@ def analyze():
             for rec in result.get("all_results", []):
                 model_scores = {
                     m: rec.get(f"score_{m}")
-                    for m in ("isolation_forest", "lof", "ocsvm")
+                    for m in ("isolation_forest", "lof", "ocsvm", "autoencoder")
                     if rec.get(f"score_{m}") is not None
                 }
                 records_to_save.append({

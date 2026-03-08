@@ -1,7 +1,7 @@
 """
 model/ensemble.py
 -----------------
-Multi-model ensemble: IsolationForest + LOF + OneClassSVM.
+Multi-model ensemble: IsolationForest + LOF + OneClassSVM + Autoencoder.
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import OneClassSVM
+
+from model.autoencoder import run_autoencoder
 
 # Minimum samples required to run the full ensemble
 _MIN_SAMPLES = 3
@@ -32,7 +34,7 @@ def run_ensemble(
     random_state: int = 42,
 ) -> dict:
     """
-    Fit all three models on *X* and return an ensemble result dict:
+    Fit all four models on *X* and return an ensemble result dict:
 
     .. code-block:: python
 
@@ -41,14 +43,16 @@ def run_ensemble(
                 "isolation_forest": [...],
                 "lof": [...],
                 "ocsvm": [...],
+                "autoencoder": [...],
             },
             "per_model_flags": {
                 "isolation_forest": [...],  # list[bool]
                 "lof": [...],
                 "ocsvm": [...],
+                "autoencoder": [...],
             },
             "ensemble_score": [...],   # average of normalised per-model scores
-            "ensemble_label": [...],   # True if majority vote says anomaly
+            "ensemble_label": [...],   # True if ≥ 2 of 4 models flag as anomaly
             "agreement_pct": float,    # fraction where all models agree
         }
 
@@ -99,15 +103,33 @@ def run_ensemble(
     ocsvm_scores = _normalize(-ocsvm_raw)            # invert → higher = anomaly
     ocsvm_flags: np.ndarray = ocsvm_labels == -1
 
-    # ── Ensemble ─────────────────────────────────────────────────────────────
-    ensemble_score: np.ndarray = (if_scores + lof_scores + ocsvm_scores) / 3.0
+    # ── Autoencoder ──────────────────────────────────────────────────────────
+    ae_scores, ae_flags = run_autoencoder(
+        X,
+        contamination=contamination,
+        random_state=random_state,
+    )
 
-    # Majority vote: anomaly if ≥ 2 of 3 models flag as anomaly
-    votes = if_flags.astype(int) + lof_flags.astype(int) + ocsvm_flags.astype(int)
+    # ── Ensemble ─────────────────────────────────────────────────────────────
+    ensemble_score: np.ndarray = (
+        if_scores + lof_scores + ocsvm_scores + ae_scores
+    ) / 4.0
+
+    # Majority vote: anomaly if ≥ 2 of 4 models flag as anomaly
+    votes = (
+        if_flags.astype(int)
+        + lof_flags.astype(int)
+        + ocsvm_flags.astype(int)
+        + ae_flags.astype(int)
+    )
     ensemble_label: np.ndarray = votes >= 2
 
-    # Fraction of samples where all three models agree
-    all_agree = (if_flags == lof_flags) & (lof_flags == ocsvm_flags)
+    # Fraction of samples where all four models agree
+    all_agree = (
+        (if_flags == lof_flags)
+        & (lof_flags == ocsvm_flags)
+        & (ocsvm_flags == ae_flags)
+    )
     agreement_pct = float(all_agree.sum() / n) if n > 0 else 1.0
 
     return {
@@ -115,13 +137,16 @@ def run_ensemble(
             "isolation_forest": if_scores.tolist(),
             "lof": lof_scores.tolist(),
             "ocsvm": ocsvm_scores.tolist(),
+            "autoencoder": ae_scores.tolist(),
         },
         "per_model_flags": {
             "isolation_forest": if_flags.tolist(),
             "lof": lof_flags.tolist(),
             "ocsvm": ocsvm_flags.tolist(),
+            "autoencoder": ae_flags.tolist(),
         },
         "ensemble_score": ensemble_score.tolist(),
         "ensemble_label": ensemble_label.tolist(),
         "agreement_pct": agreement_pct,
     }
+
