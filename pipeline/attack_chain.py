@@ -2,9 +2,13 @@
 pipeline/attack_chain.py
 ------------------------
 Group anomalies into chains by IP + time adjacency.
+Includes attack-stage classification and tactic labelling for
+Phase 2 behavioral profiling.
 """
 
 from __future__ import annotations
+
+import json
 
 import pandas as pd
 from datetime import timedelta
@@ -12,6 +16,70 @@ from datetime import timedelta
 # Severity thresholds based on maximum anomaly score in the chain
 _CRITICAL_THRESHOLD = 0.7
 _HIGH_THRESHOLD = 0.5
+
+# ---------------------------------------------------------------------------
+# Attack-stage classification
+# ---------------------------------------------------------------------------
+
+# Maps XAI reason codes (from model/explain.py) to attack stage names.
+_STAGE_MAP: dict[str, str] = {
+    "SCANNER_UA": "Reconnaissance",
+    "HIGH_ERROR_RATE": "Scanning/Exploitation",
+    "VOLUME_SPIKE": "Volumetric Attack",
+    "BYTES_SPIKE": "Data Exfiltration",
+    "OFF_HOURS_COMBINED": "Suspicious Activity",
+    "OFF_HOURS": "Suspicious Activity",
+}
+
+# Priority order used when multiple stages are found for one anomaly
+_STAGE_PRIORITY: list[str] = [
+    "Reconnaissance",
+    "Data Exfiltration",
+    "Scanning/Exploitation",
+    "Volumetric Attack",
+    "Suspicious Activity",
+]
+
+
+def classify_attack_stage(reasons: list[str]) -> str:
+    """
+    Classify a single anomaly into an attack stage based on its reason codes.
+
+    Parameters
+    ----------
+    reasons : list[str]
+        Reason code strings emitted by the XAI layer, e.g.
+        ``["SCANNER_UA", "OFF_HOURS"]``.
+
+    Returns
+    -------
+    str
+        Attack stage name, such as ``"Reconnaissance"``,
+        ``"Data Exfiltration"``, ``"Scanning/Exploitation"``,
+        ``"Volumetric Attack"``, or ``"Suspicious Activity"``.
+        Returns ``"Unknown"`` when no matching reason code is found.
+    """
+    found = {_STAGE_MAP[code] for code in reasons if code in _STAGE_MAP}
+    for stage in _STAGE_PRIORITY:
+        if stage in found:
+            return stage
+    return "Unknown"
+
+
+def _classify_tactic(stages: list[str]) -> str:
+    """
+    Derive an overall tactic label from the unique stages observed in a chain.
+
+    - Zero distinct (non-Unknown) stages → ``"Unknown"``
+    - Exactly one distinct stage          → that stage name
+    - Two or more distinct stages         → ``"Multi-Stage Attack"``
+    """
+    unique = list(dict.fromkeys(s for s in stages if s != "Unknown"))
+    if len(unique) == 0:
+        return "Unknown"
+    if len(unique) == 1:
+        return unique[0]
+    return "Multi-Stage Attack"
 
 
 def build_chains(
@@ -99,12 +167,36 @@ def _make_chain(chain_id: int, ip: str, rows: list[pd.Series]) -> dict:
     else:
         severity = "Medium"
 
+    # ── Attack-stage classification ──────────────────────────────────────────
+    stages: list[str] = []
+    for r in rows:
+        exp_raw = r.get("explanations_json")
+        if exp_raw is not None:
+            try:
+                if isinstance(exp_raw, str):
+                    exp = json.loads(exp_raw)
+                elif isinstance(exp_raw, dict):
+                    exp = exp_raw
+                else:
+                    exp = {}
+                # reasons is a list of [code, description] pairs
+                reason_codes = [item[0] for item in exp.get("reasons", [])]
+            except (json.JSONDecodeError, TypeError, ValueError, IndexError):
+                reason_codes = []
+        else:
+            reason_codes = []
+        stages.append(classify_attack_stage(reason_codes))
+
+    # Deduplicate while preserving first-seen order
+    unique_stages: list[str] = list(dict.fromkeys(stages))
+    tactic = _classify_tactic(unique_stages)
+
     narrative = (
         f"IP {ip} showed {count} anomalous activity burst(s) between "
         f"{start.isoformat()} and {end.isoformat()} "
         f"(~{duration_h:.1f}h duration). "
         f"Maximum anomaly score: {max_score:.3f}. "
-        f"Severity: {severity}."
+        f"Severity: {severity}. Tactic: {tactic}."
     )
 
     anomaly_ids: list = []
@@ -123,6 +215,8 @@ def _make_chain(chain_id: int, ip: str, rows: list[pd.Series]) -> dict:
         "anomaly_count": count,
         "max_score": round(max_score, 4),
         "severity": severity,
+        "stages": unique_stages,
+        "tactic": tactic,
         "narrative": narrative,
         "anomaly_ids": anomaly_ids,
     }

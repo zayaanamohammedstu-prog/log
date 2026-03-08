@@ -1,7 +1,8 @@
 """
 pipeline/baselines.py
 ---------------------
-Compute global and per-IP behavioral baselines.
+Compute global and per-IP behavioral baselines, and build per-IP
+behavioral profiles for Phase 2 differentiation.
 """
 
 from __future__ import annotations
@@ -140,3 +141,147 @@ def add_baseline_features(
 
     df.drop(columns=["_hour_of_day"], inplace=True)
     return df
+
+
+# ---------------------------------------------------------------------------
+# Behavioral profiling
+# ---------------------------------------------------------------------------
+
+# Thresholds used by _categorize_behavior.
+# These values are calibrated for typical Apache / CLF server traffic:
+#   - 50 req/hr is roughly 1 request per minute, distinguishing light
+#     crawlers/scrapers from normal browser sessions.
+#   - 30% error rate (0.30) signals brute-force or active scanning.
+#   - 50% POST ratio (0.50) combined with a high error rate is a strong
+#     indicator of credential-stuffing or login-brute-force attacks.
+#   - 100 KB avg response is large enough to flag bulk data retrieval
+#     while allowing normal media downloads to pass unnoticed.
+#   - 50% off-hours ratio means the IP is active predominantly at night,
+#     which is unusual for most legitimate services.
+_HIGH_REQ_THRESHOLD = 50         # avg req/hr
+_HIGH_ERROR_THRESHOLD = 0.30     # avg error rate
+_HIGH_POST_THRESHOLD = 0.50      # avg POST ratio
+_HIGH_BYTES_THRESHOLD = 100_000  # avg bytes per response
+_OFF_HOURS_THRESHOLD = 0.50      # fraction of windows in off-hours
+
+
+def _categorize_behavior(
+    has_scanner: bool,
+    avg_req: float,
+    avg_err: float,
+    avg_post: float,
+    avg_bytes: float,
+    off_hours_ratio: float,
+) -> str:
+    """
+    Assign a behavioral category to an IP based on its aggregate features.
+
+    Priority: Scanner > Credential Attack > Data Exfiltration >
+              High Volume > Suspicious Timing > Normal
+    """
+    if has_scanner:
+        return "Scanner"
+    if avg_err > _HIGH_ERROR_THRESHOLD and avg_post > _HIGH_POST_THRESHOLD:
+        return "Credential Attack"
+    if avg_bytes > _HIGH_BYTES_THRESHOLD:
+        return "Data Exfiltration"
+    if avg_req > _HIGH_REQ_THRESHOLD:
+        return "High Volume"
+    if off_hours_ratio > _OFF_HOURS_THRESHOLD:
+        return "Suspicious Timing"
+    return "Normal"
+
+
+def build_behavioral_profiles(
+    features_df: pd.DataFrame,
+    *,
+    ip_baselines: dict | None = None,
+) -> dict:
+    """
+    Build a behavioral profile for each IP address observed in *features_df*.
+
+    Each profile summarises activity patterns, request volume, error
+    behaviour, and assigns a behavioral-fingerprint category.
+
+    Parameters
+    ----------
+    features_df : pd.DataFrame
+        Feature-engineered DataFrame (output of ``engineer_features`` /
+        ``add_baseline_features``).  Must contain at least ``ip_address``
+        and ``hour_bucket`` columns.
+    ip_baselines : dict, optional
+        Per-IP baseline stats as returned by :func:`compute_ip_baselines`.
+        When provided the stats are embedded in the profile under the
+        ``"baseline"`` key.
+
+    Returns
+    -------
+    dict
+        Keyed by IP address string.  Each value is a dict with fields:
+
+        - ``total_observations``     – number of IP/hour rows seen
+        - ``off_hours_ratio``        – fraction of windows in off-hours
+        - ``avg_requests_per_hour``  – mean request volume per window
+        - ``max_requests_per_hour``  – peak request volume
+        - ``avg_error_rate``         – mean error rate
+        - ``max_error_rate``         – peak error rate
+        - ``avg_bytes_sent``         – mean response bytes
+        - ``avg_post_ratio``         – mean POST-request fraction
+        - ``has_scanner_activity``   – True if scanner UA seen in any window
+        - ``category``               – behavioral category string
+        - ``baseline``               – per-IP baseline stats (if provided)
+    """
+    if ip_baselines is None:
+        ip_baselines = {}
+
+    profiles: dict[str, dict] = {}
+
+    def _col_mean(grp: pd.DataFrame, col: str, default: float = 0.0) -> float:
+        return float(grp[col].mean()) if col in grp.columns else default
+
+    def _col_max(grp: pd.DataFrame, col: str, default: float = 0.0) -> float:
+        return float(grp[col].max()) if col in grp.columns else default
+
+    def _col_any(grp: pd.DataFrame, col: str) -> bool:
+        return bool(grp[col].any()) if col in grp.columns else False
+
+    for ip, group in features_df.groupby("ip_address"):
+        ip_str = str(ip)
+
+        avg_req = _col_mean(group, "requests_per_hour")
+        max_req = _col_max(group, "requests_per_hour")
+        avg_err = _col_mean(group, "error_rate")
+        max_err = _col_max(group, "error_rate")
+        avg_bytes = _col_mean(group, "avg_bytes_sent")
+        avg_post = _col_mean(group, "post_ratio")
+        off_hours_ratio = _col_mean(group, "is_off_hours")
+        has_scanner = _col_any(group, "has_scanner_ua")
+
+        category = _categorize_behavior(
+            has_scanner=has_scanner,
+            avg_req=avg_req,
+            avg_err=avg_err,
+            avg_post=avg_post,
+            avg_bytes=avg_bytes,
+            off_hours_ratio=off_hours_ratio,
+        )
+
+        profile: dict = {
+            "total_observations": len(group),
+            "off_hours_ratio": round(off_hours_ratio, 4),
+            "avg_requests_per_hour": round(avg_req, 2),
+            "max_requests_per_hour": round(max_req, 2),
+            "avg_error_rate": round(avg_err, 4),
+            "max_error_rate": round(max_err, 4),
+            "avg_bytes_sent": round(avg_bytes, 2),
+            "avg_post_ratio": round(avg_post, 4),
+            "has_scanner_activity": has_scanner,
+            "category": category,
+        }
+
+        if ip_str in ip_baselines:
+            profile["baseline"] = ip_baselines[ip_str]
+
+        profiles[ip_str] = profile
+
+    return profiles
