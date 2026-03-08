@@ -833,6 +833,69 @@ td.placeholder { text-align: center; color: var(--text-muted); padding: 40px; }
 @keyframes slideIn { from { transform: translateX(100%); opacity:0; } to { transform: translateX(0); opacity:1; } }
 
 /* ============================================================
+   DRILL-DOWN MODAL
+   ============================================================ */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 1000;
+  display: flex; align-items: flex-start; justify-content: flex-end;
+  opacity: 0; pointer-events: none; transition: opacity var(--transition);
+}
+.modal-overlay.open { opacity: 1; pointer-events: auto; }
+.drill-panel {
+  width: 520px; max-width: 96vw; height: 100vh; overflow-y: auto;
+  background: var(--bg2); border-left: 1px solid var(--border);
+  box-shadow: var(--shadow); padding: 24px;
+  transform: translateX(100%); transition: transform var(--transition);
+}
+.modal-overlay.open .drill-panel { transform: translateX(0); }
+.drill-panel-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+.drill-panel-title  { font-size: 1.1rem; font-weight: 600; color: var(--text); }
+.drill-close-btn    { background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; padding: 4px; }
+.drill-close-btn:hover { color: var(--danger); }
+.drill-section      { margin-bottom: 20px; }
+.drill-section-title { font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-bottom: 10px; }
+.drill-kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.drill-kv { background: var(--surface); border-radius: var(--radius); padding: 10px 12px; }
+.drill-kv-label { font-size: .72rem; color: var(--text-muted); margin-bottom: 3px; }
+.drill-kv-value { font-size: .9rem; font-weight: 600; color: var(--text); }
+.reason-tag { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
+  border-radius: 20px; font-size: .78rem; font-weight: 600; margin: 3px;
+  background: rgba(248,81,73,.15); color: #f85149; border: 1px solid rgba(248,81,73,.3); }
+.model-score-bar { margin-bottom: 8px; }
+.model-score-label { display: flex; justify-content: space-between; font-size: .8rem; margin-bottom: 3px; color: var(--text); }
+.model-score-track { height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; }
+.model-score-fill  { height: 100%; border-radius: 4px; transition: width .4s ease; }
+.deviation-row { display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0; border-bottom: 1px solid var(--border); font-size: .82rem; }
+.deviation-row:last-child { border-bottom: none; }
+.deviation-feat { color: var(--text-muted); }
+.deviation-score { font-weight: 600; }
+.deviation-pos  { color: var(--danger); }
+.deviation-neg  { color: var(--success); }
+.chain-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+  border-radius: var(--radius); font-size: .82rem; font-weight: 600;
+  background: rgba(88,166,255,.12); color: var(--accent); border: 1px solid rgba(88,166,255,.25); }
+
+/* ============================================================
+   ATTACK CHAINS LIST
+   ============================================================ */
+.chains-list { display: flex; flex-direction: column; gap: 12px; }
+.chain-card  { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+.chain-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.chain-card-ip     { font-size: .9rem; font-weight: 600; color: var(--text); font-family: monospace; }
+.chain-card-body   { font-size: .82rem; color: var(--text-muted); }
+.chain-meta { display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
+.chain-meta-item { font-size: .75rem; color: var(--text-muted); }
+.chain-narrative { font-style: italic; color: var(--text-muted); margin-top: 6px; font-size: .8rem; }
+
+/* ============================================================
+   RUN SELECTOR
+   ============================================================ */
+.run-id-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+  border-radius: 20px; font-size: .75rem; background: rgba(63,185,80,.12);
+  color: var(--success); border: 1px solid rgba(63,185,80,.25); margin-left: 8px; }
+
+/* ============================================================
    RESPONSIVE
    ============================================================ */
 @media (max-width: 900px) {

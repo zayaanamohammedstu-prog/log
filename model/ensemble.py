@@ -14,6 +14,8 @@ from sklearn.svm import OneClassSVM
 
 # Minimum samples required to run the full ensemble
 _MIN_SAMPLES = 3
+# Cap LOF n_neighbors to bound memory/runtime on large datasets
+_MAX_NEIGHBORS = 20
 
 
 def _normalize(scores: np.ndarray) -> np.ndarray:
@@ -78,7 +80,7 @@ def run_ensemble(
     # ── LocalOutlierFactor (novelty=False, same-data) ────────────────────────
     # Cap n_neighbors at 20 to bound memory/runtime; require at least 1 so
     # the algorithm can run on any non-trivial dataset.
-    n_neighbors = max(1, min(20, n - 1))
+    n_neighbors = max(1, min(_MAX_NEIGHBORS, n - 1))
     lof = LocalOutlierFactor(
         n_neighbors=n_neighbors,
         contamination=contamination,

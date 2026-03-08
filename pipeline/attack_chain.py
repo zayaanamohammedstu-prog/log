@@ -9,6 +9,10 @@ from __future__ import annotations
 import pandas as pd
 from datetime import timedelta
 
+# Severity thresholds based on maximum anomaly score in the chain
+_CRITICAL_THRESHOLD = 0.7
+_HIGH_THRESHOLD = 0.5
+
 
 def build_chains(
     anomalies_df: pd.DataFrame,
@@ -88,9 +92,9 @@ def _make_chain(chain_id: int, ip: str, rows: list[pd.Series]) -> dict:
     count = len(rows)
     duration_h = (end - start).total_seconds() / 3600.0
 
-    if max_score >= 0.7:
+    if max_score >= _CRITICAL_THRESHOLD:
         severity = "Critical"
-    elif max_score >= 0.5:
+    elif max_score >= _HIGH_THRESHOLD:
         severity = "High"
     else:
         severity = "Medium"

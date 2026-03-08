@@ -17,6 +17,9 @@ _FEATURE_COLS = [
     "post_ratio",
 ]
 
+# Minimum clip value to prevent division-by-zero in ratio calculations
+_MIN_EXPECTED_VALUE = 1e-9
+
 
 def compute_global_baselines(features_df: pd.DataFrame) -> dict:
     """
@@ -118,7 +121,7 @@ def add_baseline_features(
         ip_vals = _ip_series(feature)
         global_vals = _hourly_series(feature, default=default_global)
         use_ip = ip_vals.notna() & (ip_vals > 0)
-        return ip_vals.where(use_ip, global_vals).clip(lower=1e-9)
+        return ip_vals.where(use_ip, global_vals).clip(lower=_MIN_EXPECTED_VALUE)
 
     # requests_vs_expected (vectorised)
     exp_req = _expected_positive("requests_per_hour", default_global=1.0)

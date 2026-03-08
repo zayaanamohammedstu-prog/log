@@ -28,6 +28,11 @@ _FEATURE_COLS = [
     "post_ratio",
 ]
 
+# Rule-based detection thresholds
+_OFF_HOURS_HIGH_VOLUME_THRESHOLD = 10    # requests/hr to trigger OFF_HOURS_COMBINED
+_HIGH_ERROR_RATE_THRESHOLD = 0.30        # error rate above which HIGH_ERROR_RATE fires
+_SPIKE_Z_SCORE_THRESHOLD = 2.0          # z-score above which VOLUME_SPIKE/BYTES_SPIKE fires
+
 
 def _norm_cdf(z: float) -> float:
     """Approximate CDF of the standard normal distribution using math.erf."""
@@ -56,12 +61,12 @@ def explain_anomaly(
     if row.get("has_scanner_ua", 0):
         reasons.append(("SCANNER_UA", REASON_CODES["SCANNER_UA"]))
 
-    if row.get("is_off_hours", 0) and float(row.get("requests_per_hour", 0)) > 10:
+    if row.get("is_off_hours", 0) and float(row.get("requests_per_hour", 0)) > _OFF_HOURS_HIGH_VOLUME_THRESHOLD:
         reasons.append(("OFF_HOURS_COMBINED", REASON_CODES["OFF_HOURS_COMBINED"]))
     elif row.get("is_off_hours", 0):
         reasons.append(("OFF_HOURS", REASON_CODES["OFF_HOURS"]))
 
-    if float(row.get("error_rate", 0)) > 0.30:
+    if float(row.get("error_rate", 0)) > _HIGH_ERROR_RATE_THRESHOLD:
         reasons.append(("HIGH_ERROR_RATE", REASON_CODES["HIGH_ERROR_RATE"]))
 
     # ── Statistical deviations ───────────────────────────────────────────────
@@ -106,12 +111,12 @@ def explain_anomaly(
         )
 
         # Volume spike
-        if col == "requests_per_hour" and z_score > 2.0:
+        if col == "requests_per_hour" and z_score > _SPIKE_Z_SCORE_THRESHOLD:
             if not any(r[0] == "VOLUME_SPIKE" for r in reasons):
                 reasons.append(("VOLUME_SPIKE", REASON_CODES["VOLUME_SPIKE"]))
 
         # Bytes spike
-        if col == "avg_bytes_sent" and z_score > 2.0:
+        if col == "avg_bytes_sent" and z_score > _SPIKE_Z_SCORE_THRESHOLD:
             if not any(r[0] == "BYTES_SPIKE" for r in reasons):
                 reasons.append(("BYTES_SPIKE", REASON_CODES["BYTES_SPIKE"]))
 

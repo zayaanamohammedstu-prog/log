@@ -244,10 +244,11 @@
                 <th>Off-Hours</th>
                 <th>Scanner UA</th>
                 <th>Risk Level</th>
+                <th>Details</th>
               </tr>
             </thead>
             <tbody id="anomalyBody">
-              <tr><td colspan="11" class="placeholder">Run an analysis to see results.</td></tr>
+              <tr><td colspan="12" class="placeholder">Run an analysis to see results.</td></tr>
             </tbody>
           </table>
         </div>
@@ -298,6 +299,15 @@
         <div class="audit-summary-row">
           <div class="audit-summary-label">Overall Risk Rating</div>
           <div id="auditOverallRisk">—</div>
+        </div>
+      </div>
+
+      <!-- Attack chains -->
+      <div>
+        <div class="section-title">🔗 Attack Chains</div>
+        <p class="section-desc">Anomalous buckets grouped by IP and temporal proximity to reconstruct potential attack sequences.</p>
+        <div class="chains-list" id="chainsList">
+          <div class="finding-card"><p style="color:var(--text-muted)">Run an analysis to see attack chain reconstruction.</p></div>
         </div>
       </div>
 
@@ -381,6 +391,12 @@
           <button class="btn btn-secondary" id="btnPrintReport">🖨 Print Report</button>
         </div>
         <div class="export-card">
+          <div class="export-icon">📑</div>
+          <h4>Download HTML Report</h4>
+          <p>Download a full auditor-friendly HTML report including executive summary, anomalies, attack chains narrative, and model settings appendix.</p>
+          <button class="btn btn-primary" id="btnDownloadHtmlReport">⬇ Download HTML Report</button>
+        </div>
+        <div class="export-card">
           <div class="export-icon">📋</div>
           <h4>Copy Summary to Clipboard</h4>
           <p>Copy a text summary of the key audit metrics to the clipboard for quick sharing or pasting into audit workpapers.</p>
@@ -415,6 +431,46 @@
 
   </div><!-- /.content-area -->
 </div><!-- /.workbench-main -->
+
+<!-- =================== DRILL-DOWN MODAL =================== -->
+<div class="modal-overlay" id="drillOverlay">
+  <div class="drill-panel" id="drillPanel">
+    <div class="drill-panel-header">
+      <div class="drill-panel-title" id="drillTitle">Anomaly Detail</div>
+      <button class="drill-close-btn" id="drillClose" aria-label="Close">✕</button>
+    </div>
+
+    <div class="drill-section" id="drillKvSection">
+      <div class="drill-section-title">Overview</div>
+      <div class="drill-kv-grid" id="drillKvGrid"></div>
+    </div>
+
+    <div class="drill-section" id="drillReasonsSection">
+      <div class="drill-section-title">🔍 Explanation — Reason Codes</div>
+      <div id="drillReasons"></div>
+    </div>
+
+    <div class="drill-section" id="drillDeviationsSection">
+      <div class="drill-section-title">📊 Feature Deviations (z-score)</div>
+      <div id="drillDeviations"></div>
+    </div>
+
+    <div class="drill-section" id="drillModelsSection">
+      <div class="drill-section-title">🤖 Per-Model Scores</div>
+      <div id="drillModelScores"></div>
+    </div>
+
+    <div class="drill-section" id="drillChainSection" style="display:none;">
+      <div class="drill-section-title">🔗 Chain Membership</div>
+      <div id="drillChainInfo"></div>
+    </div>
+
+    <div class="drill-section">
+      <div class="drill-section-title">📈 Raw Features</div>
+      <div class="drill-kv-grid" id="drillFeaturesGrid"></div>
+    </div>
+  </div>
+</div>
 
 <!-- Toast container -->
 <div class="toast-container" id="toastContainer"></div>

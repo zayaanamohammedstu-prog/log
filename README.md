@@ -126,20 +126,96 @@ in step 2.
 All API endpoints require authentication. Unauthenticated requests receive a
 JSON `401` response (not an HTML redirect).
 
+### Core endpoints
+
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/` | Audit Workbench dashboard (login required) |
-| `GET` | `POST` `/login` | Login page / authenticate |
-| `GET` | `POST` `/logout` | End session |
+| `GET/POST` | `/login` | Login page / authenticate |
+| `GET/POST` | `/logout` | End session |
 | `GET` | `/admin` | Admin panel (admin role required) |
 | `GET` | `/api/status` | Health-check + model status |
-| `POST` | `/api/analyze` | Analyse log data; returns JSON results |
+| `POST` | `/api/analyze` | Analyse log data; returns JSON results + `run_id` |
 | `GET` | `/api/results` | Return cached results from last analysis |
+| `GET` | `/api/export/csv` | Export last results as CSV |
+| `GET` | `/api/export/json` | Export last results as JSON |
 
 **POST `/api/analyze`** accepts:
 - `multipart/form-data` with field `logfile` (file upload)
 - `application/json` with `{"log_text": "…"}` (raw log string)
 - `application/json` with `{"use_sample": true}` (bundled demo data)
+
+Response now includes `run_id`, `chains`, and per-row `explanations_json`.
+
+### Analysis run persistence
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/runs` | List all analysis runs (newest first) |
+| `GET` | `/api/runs/<run_id>` | Get run metadata + all result rows |
+| `GET` | `/api/runs/<run_id>/anomalies/<anomaly_id>` | Single anomaly row detail |
+| `GET` | `/api/runs/<run_id>/ips/<ip>/timeline` | All rows for a specific IP in a run |
+| `GET` | `/api/runs/<run_id>/chains` | List attack chains for a run |
+| `GET` | `/api/runs/<run_id>/chains/<chain_id>` | Single attack chain detail |
+| `GET` | `/api/runs/<run_id>/report` | Download HTML audit report |
+
+### Audit ledger (admin only)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/audit/verify` | Verify tamper-evident ledger integrity |
+| `GET` | `/api/audit/entries` | List all ledger entries |
+
+---
+
+## XAI & Advanced Features
+
+### Multi-Model Ensemble (PR3)
+Each analysis runs **three detectors** and produces a majority-vote result:
+- **Isolation Forest** — tree-based anomaly scoring
+- **LOF** (Local Outlier Factor) — density-based local anomaly detection
+- **One-Class SVM** — boundary-based novelty detection
+
+Per-model scores, per-model flags, ensemble score, and agreement percentage
+are returned in each result row.
+
+### Behavioral Baselines (PR2)
+Global (per-hour-of-day) and per-IP baselines are computed from each dataset.
+Three baseline-adjusted features are added to every row:
+- `requests_vs_expected` — ratio of actual vs expected requests for that hour
+- `bytes_vs_expected` — ratio of actual vs expected bytes for that hour
+- `error_rate_delta` — deviation from expected error rate for that hour
+
+### XAI Explanations (PR4)
+Each anomalous row receives an `explanations_json` field containing:
+- **Reason codes** — rule-based flags: `SCANNER_UA`, `VOLUME_SPIKE`, `OFF_HOURS`,
+  `HIGH_ERROR_RATE`, `BYTES_SPIKE`, `OFF_HOURS_COMBINED`
+- **Feature deviations** — z-score and percentile vs global mean for each feature
+
+### Attack Chain Reconstruction (PR5)
+Anomalies are grouped into **attack chains** by IP address and time adjacency
+(configurable gap, default 2 hours). Each chain has a severity rating
+(Critical/High/Medium) and a human-readable narrative.
+
+### Interactive Drill-Down Dashboard (PR6)
+Click any row in the Anomaly Explorer table to open a drill-down panel showing:
+- Reason codes and feature deviations
+- Per-model score bars
+- Chain membership
+- Raw feature values
+
+### Automated HTML Report (PR7)
+`GET /api/runs/<run_id>/report` returns an auditor-friendly HTML report with:
+- Executive summary and statistics
+- Top anomalies table with explanations
+- Attack chains narrative
+- Model settings appendix
+
+### Tamper-Evident Audit Ledger (PR8)
+Every analysis run appends a SHA-256 hash-chain entry to the ledger.
+Each entry records: `prev_hash`, `timestamp`, `actor`, `input_hash`,
+`results_hash`, and `entry_hash`. Admins can verify integrity via
+`GET /api/audit/verify`.
 
 ---
 
@@ -149,7 +225,7 @@ JSON `401` response (not an HTML redirect).
 pytest tests/ -v
 ```
 
-All 59 tests should pass.
+All 138 tests should pass.
 
 ---
 
