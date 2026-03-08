@@ -27,6 +27,7 @@ import traceback
 import pandas as pd
 from flask import (
     Flask,
+    Response,
     jsonify,
     redirect,
     render_template,
@@ -196,6 +197,69 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
     method_counts = raw_df["method"].value_counts().to_dict()
     method_counts = {str(k): int(v) for k, v in method_counts.items()}
 
+    # Top 10 IPs by total request count
+    top_ips = (
+        raw_df.groupby("ip_address")
+        .size()
+        .reset_index(name="request_count")
+        .sort_values("request_count", ascending=False)
+        .head(10)
+        .to_dict(orient="records")
+    )
+    top_ips = [{"ip_address": r["ip_address"], "request_count": int(r["request_count"])} for r in top_ips]
+
+    # Hourly distribution (hour 0–23)
+    hourly_dist_series = (
+        pd.to_datetime(raw_df["timestamp"], utc=True)
+        .dt.hour
+        .value_counts()
+        .sort_index()
+    )
+    hourly_distribution = {str(h): int(c) for h, c in hourly_dist_series.items()}
+
+    # Risk classification for each IP/hour bucket
+    def _classify_risk(score: float) -> str:
+        if score >= 0.7:
+            return "Critical"
+        if score >= 0.5:
+            return "High"
+        if score >= 0.3:
+            return "Medium"
+        return "Low"
+
+    results_df["risk_level"] = results_df["anomaly_score"].apply(_classify_risk)
+    risk_distribution = results_df["risk_level"].value_counts().to_dict()
+    risk_distribution = {k: int(v) for k, v in risk_distribution.items()}
+
+    # Top anomalous IPs (max score per IP)
+    if not anomalies_df.empty:
+        top_anomalous_ips = (
+            anomalies_df.groupby("ip_address")
+            .agg(max_score=("anomaly_score", "max"), total_requests=("requests_per_hour", "sum"))
+            .sort_values("max_score", ascending=False)
+            .head(10)
+            .reset_index()
+        )
+        top_anomalous_ips = [
+            {
+                "ip_address": r["ip_address"],
+                "max_score": round(float(r["max_score"]), 4),
+                "total_requests": int(r["total_requests"]),
+            }
+            for _, r in top_anomalous_ips.iterrows()
+        ]
+    else:
+        top_anomalous_ips = []
+
+    # Endpoint frequency (top 10 most visited endpoints)
+    top_endpoints = (
+        raw_df["endpoint"]
+        .value_counts()
+        .head(10)
+        .to_dict()
+    )
+    top_endpoints = {str(k): int(v) for k, v in top_endpoints.items()}
+
     summary = {
         "total_requests": int(len(raw_df)),
         "total_ip_hour_buckets": int(len(results_df)),
@@ -210,6 +274,11 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
         "timeline": timeline,
         "status_code_distribution": status_counts,
         "method_distribution": method_counts,
+        "top_ips": top_ips,
+        "hourly_distribution": hourly_distribution,
+        "risk_distribution": risk_distribution,
+        "top_anomalous_ips": top_anomalous_ips,
+        "top_endpoints": top_endpoints,
     }
     return summary
 
@@ -348,6 +417,45 @@ def results():
     if not _last_results:
         return jsonify({"error": "No analysis has been run yet."}), 404
     return jsonify(_last_results)
+
+
+@app.route("/api/export/<fmt>")
+@login_required
+def export_results(fmt: str):
+    """Export the last analysis results as CSV or JSON.
+
+    Parameters
+    ----------
+    fmt : str
+        ``csv`` or ``json``.
+    """
+    if not _last_results:
+        return jsonify({"error": "No analysis has been run yet."}), 404
+
+    if fmt == "csv":
+        rows = _last_results.get("all_results", [])
+        if not rows:
+            return jsonify({"error": "No row-level results to export."}), 404
+        df = pd.DataFrame(rows)
+        csv_data = df.to_csv(index=False)
+        return Response(
+            csv_data,
+            mimetype="text/csv",
+            headers={
+                "Content-Disposition": "attachment; filename=logguard_results.csv"
+            },
+        )
+
+    if fmt == "json":
+        return Response(
+            json.dumps(_last_results, indent=2, default=str),
+            mimetype="application/json",
+            headers={
+                "Content-Disposition": "attachment; filename=logguard_results.json"
+            },
+        )
+
+    return jsonify({"error": "Unsupported format. Use 'csv' or 'json'."}), 400
 
 
 # ---------------------------------------------------------------------------

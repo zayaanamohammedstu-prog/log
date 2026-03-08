@@ -132,3 +132,64 @@ class TestRoutes:
             assert "hour_bucket" in entry
             assert "mean_risk_score" in entry
 
+    def test_analyze_returns_extended_analytics(self, client):
+        """Analysis result should include new analytics fields."""
+        resp = client.post(
+            "/api/analyze",
+            data=json.dumps({"use_sample": True}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert "top_ips" in data
+        assert "hourly_distribution" in data
+        assert "risk_distribution" in data
+        assert "top_anomalous_ips" in data
+        assert "top_endpoints" in data
+        # risk_distribution values should be valid risk levels
+        for key in data["risk_distribution"]:
+            assert key in {"Critical", "High", "Medium", "Low"}
+
+    def test_export_csv_after_analysis(self, client):
+        """Export CSV endpoint should return CSV data after an analysis."""
+        client.post(
+            "/api/analyze",
+            data=json.dumps({"use_sample": True}),
+            content_type="application/json",
+        )
+        resp = client.get("/api/export/csv")
+        assert resp.status_code == 200
+        assert resp.content_type.startswith("text/csv")
+        body = resp.data.decode("utf-8")
+        assert "ip_address" in body or "anomaly_score" in body
+
+    def test_export_json_after_analysis(self, client):
+        """Export JSON endpoint should return JSON data after an analysis."""
+        client.post(
+            "/api/analyze",
+            data=json.dumps({"use_sample": True}),
+            content_type="application/json",
+        )
+        resp = client.get("/api/export/json")
+        assert resp.status_code == 200
+        assert "json" in resp.content_type
+        data = json.loads(resp.data)
+        assert "total_requests" in data
+
+    def test_export_returns_404_before_analysis(self, client):
+        """Export endpoint should return 404 if no analysis has been run."""
+        import app.app as app_module
+        app_module._last_results = {}
+        resp = client.get("/api/export/csv")
+        assert resp.status_code == 404
+
+    def test_export_unsupported_format(self, client):
+        """Export with unsupported format should return 400."""
+        client.post(
+            "/api/analyze",
+            data=json.dumps({"use_sample": True}),
+            content_type="application/json",
+        )
+        resp = client.get("/api/export/xml")
+        assert resp.status_code == 400
+
