@@ -59,14 +59,12 @@ def init_run_store(instance_path: str) -> None:
         )
         conn.commit()
         # Migrate existing DBs: add new columns if they don't exist yet
-        for col, definition in [
-            ("filename", "TEXT NOT NULL DEFAULT ''"),
-            ("summary_json", "TEXT"),
+        for alter_sql in [
+            "ALTER TABLE analysis_runs ADD COLUMN filename TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE analysis_runs ADD COLUMN summary_json TEXT",
         ]:
             try:
-                conn.execute(
-                    f"ALTER TABLE analysis_runs ADD COLUMN {col} {definition}"
-                )
+                conn.execute(alter_sql)
                 conn.commit()
             except sqlite3.OperationalError:
                 pass  # Column already present

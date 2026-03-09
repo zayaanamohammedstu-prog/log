@@ -30,8 +30,10 @@ function applyTheme(theme) {
   // Update Chart.js global defaults
   const textColor   = isDark ? "#8b949e" : "#636c76";
   const borderColor = isDark ? "#30363d" : "#d0d7de";
-  Chart.defaults.color       = textColor;
-  Chart.defaults.borderColor = borderColor;
+  if (typeof Chart !== "undefined") {
+    Chart.defaults.color       = textColor;
+    Chart.defaults.borderColor = borderColor;
+  }
 
   // Re-render charts if data exists
   if (_lastData) renderAllCharts(_lastData);
@@ -76,9 +78,11 @@ let scatterChart       = null;
 let offHoursChart      = null;
 let endpointChart      = null;
 
-// Chart.js defaults
-Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-Chart.defaults.font.size   = 12;
+// Chart.js defaults (guarded in case CDN fails to load)
+if (typeof Chart !== "undefined") {
+  Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+  Chart.defaults.font.size   = 12;
+}
 
 // ============================================================
 // CACHED DATA
@@ -1107,21 +1111,29 @@ async function loadRunHistory() {
         ? new Date(run.timestamp).toLocaleString("en-GB", { timeZone: "UTC", hour12: false }) + " UTC"
         : "—";
       const typeBadge = `<span class="history-badge-${run.input_type || 'sample'}">${run.input_type || 'sample'}</span>`;
-      const fileLabel = run.filename ? run.filename : (run.input_type === "sample" ? "sample_logs.txt" : "—");
-      // Anomaly count is stored inside summary_json; we show — if not available here
+      const escapedFile = (run.filename || (run.input_type === "sample" ? "sample_logs.txt" : "—"))
+        .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
       return `<tr>
         <td><span class="run-id-badge">Run #${run.id}</span></td>
         <td>${ts}</td>
-        <td>${run.username || "—"}</td>
+        <td>${(run.username || "—").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</td>
         <td>${typeBadge}</td>
-        <td style="font-family:monospace;font-size:.82rem;">${fileLabel}</td>
+        <td style="font-family:monospace;font-size:.82rem;">${escapedFile}</td>
         <td id="hist-anomalies-${run.id}">—</td>
         <td>
-          <button class="btn btn-primary btn-sm history-load-btn" onclick="loadHistoryRun(${run.id})">▶ Load</button>
-          <button class="btn btn-secondary btn-sm history-load-btn" style="margin-left:6px;" onclick="downloadRunReport(${run.id})">📑 Report</button>
+          <button class="btn btn-primary btn-sm history-load-btn" data-run-id="${run.id}">▶ Load</button>
+          <button class="btn btn-secondary btn-sm history-load-btn history-report-btn" data-run-id="${run.id}" style="margin-left:6px;">📑 Report</button>
         </td>
       </tr>`;
     }).join("");
+
+    // Attach handlers via event delegation
+    tbody.querySelectorAll(".history-load-btn:not(.history-report-btn)").forEach(btn => {
+      btn.addEventListener("click", () => loadHistoryRun(parseInt(btn.dataset.runId)));
+    });
+    tbody.querySelectorAll(".history-report-btn").forEach(btn => {
+      btn.addEventListener("click", () => downloadRunReport(parseInt(btn.dataset.runId)));
+    });
 
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="7" class="placeholder">Error loading history: ${err.message}</td></tr>`;
@@ -1193,14 +1205,27 @@ async function loadAdminUsers() {
       const isSelf = u.id === currentId;
       const delBtn = isSelf
         ? `<span style="color:var(--text-muted);font-size:.8rem;">(current user)</span>`
-        : `<button class="btn btn-sm" style="background:rgba(248,81,73,.15);color:var(--danger);border:1px solid rgba(248,81,73,.3);font-size:.8rem;" onclick="deleteAdminUser(${u.id}, '${u.username}')">🗑 Delete</button>`;
-      return `<tr>
+        : `<button class="btn btn-sm admin-del-user-btn"
+              data-user-id="${u.id}"
+              style="background:rgba(248,81,73,.15);color:var(--danger);border:1px solid rgba(248,81,73,.3);font-size:.8rem;">🗑 Delete</button>`;
+      const escapedUsername = u.username.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      return `<tr data-username="${escapedUsername}">
         <td>${u.id}</td>
-        <td><strong>${u.username}</strong></td>
+        <td><strong>${escapedUsername}</strong></td>
         <td><span class="user-role role-${u.role}">${u.role}</span></td>
         <td>${delBtn}</td>
       </tr>`;
     }).join("");
+
+    // Attach delete handlers via event delegation
+    tbody.querySelectorAll(".admin-del-user-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const userId = parseInt(btn.dataset.userId);
+        const row = btn.closest("tr");
+        const username = row ? (row.dataset.username || "") : "";
+        deleteAdminUser(userId, username);
+      });
+    });
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="4" class="placeholder">Error: ${err.message}</td></tr>`;
   }
