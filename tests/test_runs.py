@@ -20,6 +20,7 @@ from app.run_store import (
     get_run,
     list_runs,
     get_run_results,
+    get_run_summary,
     save_chains,
     get_chains,
     get_chain,
@@ -43,6 +44,38 @@ class TestRunCRUD:
         assert run["input_type"] == "sample"
         assert run["input_hash"] == "abc123"
         assert "timestamp" in run
+
+    def test_save_run_with_filename(self, store):
+        run_id = save_run(store, "alice", "upload", "abc123", filename="access.log")
+        run = get_run(store, run_id)
+        assert run["filename"] == "access.log"
+
+    def test_save_run_defaults_filename_empty(self, store):
+        run_id = save_run(store, "alice", "sample", "abc123")
+        run = get_run(store, run_id)
+        assert run["filename"] == ""
+
+    def test_save_run_with_summary_json(self, store):
+        summary = {"total_requests": 100, "anomaly_count": 5}
+        import json
+        run_id = save_run(
+            store, "alice", "upload", "abc123",
+            filename="test.log",
+            summary_json=json.dumps(summary),
+        )
+        result = get_run_summary(store, run_id)
+        assert result is not None
+        assert result["total_requests"] == 100
+        assert result["anomaly_count"] == 5
+        assert result["run_id"] == run_id
+        assert result["filename"] == "test.log"
+
+    def test_get_run_summary_no_summary(self, store):
+        run_id = save_run(store, "alice", "sample", "abc123")
+        assert get_run_summary(store, run_id) is None
+
+    def test_get_run_summary_not_found(self, store):
+        assert get_run_summary(store, 9999) is None
 
     def test_get_run_not_found(self, store):
         assert get_run(store, 9999) is None
@@ -68,6 +101,13 @@ class TestRunCRUD:
             save_run(store, "u", "sample", f"h{i}")
         runs = list_runs(store, limit=3)
         assert len(runs) == 3
+
+    def test_list_runs_excludes_summary_json(self, store):
+        """list_runs should not include the (potentially large) summary_json."""
+        import json
+        save_run(store, "alice", "upload", "h1", summary_json=json.dumps({"big": "data"}))
+        runs = list_runs(store)
+        assert "summary_json" not in runs[0]
 
 
 class TestResultsCRUD:

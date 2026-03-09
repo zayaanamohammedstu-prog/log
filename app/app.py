@@ -85,6 +85,8 @@ from db import (  # noqa: E402
     get_user_by_id,
     count_users,
     verify_password,
+    list_users,
+    delete_user,
 )
 from models import User  # noqa: E402
 from run_store import (  # noqa: E402
@@ -94,6 +96,7 @@ from run_store import (  # noqa: E402
     get_run,
     list_runs,
     get_run_results,
+    get_run_summary,
     save_chains,
     get_chains,
     get_chain,
@@ -457,10 +460,12 @@ def analyze():
         raw_df = None
         input_type = "sample"
         raw_bytes = b""
+        filename = ""
 
         # --- file upload ---
         if "logfile" in request.files:
             f = request.files["logfile"]
+            filename = f.filename or ""
             raw_bytes = f.read()
             input_type = "upload"
             with tempfile.NamedTemporaryFile(
@@ -495,17 +500,26 @@ def analyze():
             with open(sample_path, "rb") as fh:
                 raw_bytes = fh.read()
             raw_df = parse_log_file(sample_path)
+            filename = "sample_logs.txt"
 
         input_hash = hashlib.sha256(raw_bytes).hexdigest()
 
         result = _analyse_df(raw_df)
         if "error" not in result:
+            # Build a compact summary (all_results omitted — large row-level data
+            # is already persisted in analysis_results table).
+            summary_for_storage = {
+                k: v for k, v in result.items() if k != "all_results"
+            }
+
             # ── Persist the run ───────────────────────────────────────────
             run_id = save_run(
                 app.instance_path,
                 username=current_user.username,
                 input_type=input_type,
                 input_hash=input_hash,
+                filename=filename,
+                summary_json=json.dumps(summary_for_storage, default=str),
             )
 
             # Build records for DB insertion using the canonical feature column list
@@ -561,6 +575,7 @@ def analyze():
             )
 
             result["run_id"] = run_id
+            result["filename"] = filename
             _last_results = result
 
         return jsonify(result)
@@ -640,6 +655,20 @@ def api_get_chain(run_id: int, chain_id: int):
     return jsonify(chain)
 
 
+@app.route("/api/runs/<int:run_id>/summary")
+@login_required
+def api_run_summary(run_id: int):
+    """Return the stored analysis summary for a run (for history reload)."""
+    summary = get_run_summary(app.instance_path, run_id)
+    if summary is None:
+        # Run may exist but summary not stored (old run); fall back to metadata only
+        run = get_run(app.instance_path, run_id)
+        if run is None:
+            return jsonify({"error": "Run not found."}), 404
+        return jsonify({"error": "Summary not available for this run.", "run": run}), 404
+    return jsonify(summary)
+
+
 @app.route("/api/runs/<int:run_id>/report")
 @login_required
 def api_run_report(run_id: int):
@@ -681,6 +710,71 @@ def api_audit_entries():
         return jsonify({"error": "Admin access required."}), 403
     entries = get_all_entries(app.instance_path)
     return jsonify({"entries": entries})
+
+
+# ---------------------------------------------------------------------------
+# Admin API endpoints (admin only)
+# ---------------------------------------------------------------------------
+
+@app.route("/api/admin/stats")
+@login_required
+def api_admin_stats():
+    """Return system statistics for the admin panel."""
+    if not current_user.is_admin:
+        return jsonify({"error": "Admin access required."}), 403
+    user_count = count_users(app.instance_path)
+    runs = list_runs(app.instance_path, limit=1000)
+    return jsonify({
+        "user_count": user_count,
+        "total_runs": len(runs),
+        "version": "v2.0",
+        "db_engine": "SQLite",
+    })
+
+
+@app.route("/api/admin/users", methods=["GET"])
+@login_required
+def api_admin_list_users():
+    """List all registered users. Admin only."""
+    if not current_user.is_admin:
+        return jsonify({"error": "Admin access required."}), 403
+    users = list_users(app.instance_path)
+    return jsonify({"users": users})
+
+
+@app.route("/api/admin/users", methods=["POST"])
+@login_required
+def api_admin_create_user():
+    """Create a new user. Admin only."""
+    if not current_user.is_admin:
+        return jsonify({"error": "Admin access required."}), 403
+    payload = request.get_json(force=True) or {}
+    username = (payload.get("username") or "").strip()
+    password = payload.get("password") or ""
+    role = (payload.get("role") or "auditor").strip()
+    if not username or not password:
+        return jsonify({"error": "username and password are required."}), 400
+    if role not in ("admin", "auditor"):
+        return jsonify({"error": "role must be 'admin' or 'auditor'."}), 400
+    existing = get_user_by_username(app.instance_path, username)
+    if existing:
+        return jsonify({"error": f"Username '{username}' already exists."}), 409
+    new_id = create_user(app.instance_path, username, password, role=role)
+    return jsonify({"id": new_id, "username": username, "role": role}), 201
+
+
+@app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
+@login_required
+def api_admin_delete_user(user_id: int):
+    """Delete a user by id. Admin only. Cannot delete yourself."""
+    if not current_user.is_admin:
+        return jsonify({"error": "Admin access required."}), 403
+    if user_id == current_user.id:
+        return jsonify({"error": "You cannot delete your own account."}), 400
+    deleted = delete_user(app.instance_path, user_id)
+    if not deleted:
+        return jsonify({"error": "User not found."}), 404
+    return jsonify({"deleted": True, "user_id": user_id})
 
 
 @app.route("/api/results")
