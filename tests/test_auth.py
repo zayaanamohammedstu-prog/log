@@ -172,3 +172,73 @@ class TestAdminRole:
         resp = admin_client.get("/admin")
         assert resp.status_code == 200
         assert b"Administration" in resp.data
+
+    # Admin API endpoints
+    def test_admin_stats_requires_admin(self, auditor_client):
+        resp = auditor_client.get("/api/admin/stats")
+        assert resp.status_code == 403
+
+    def test_admin_stats_accessible_for_admin(self, admin_client):
+        resp = admin_client.get("/api/admin/stats")
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert "user_count" in data
+        assert "total_runs" in data
+
+    def test_admin_list_users_requires_admin(self, auditor_client):
+        resp = auditor_client.get("/api/admin/users")
+        assert resp.status_code == 403
+
+    def test_admin_list_users(self, admin_client):
+        resp = admin_client.get("/api/admin/users")
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert "users" in data
+        assert any(u["username"] == "testadmin" for u in data["users"])
+
+    def test_admin_create_user(self, admin_client):
+        resp = admin_client.post(
+            "/api/admin/users",
+            data=json.dumps({"username": "newuser", "password": "pass123", "role": "auditor"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 201
+        data = json.loads(resp.data)
+        assert data["username"] == "newuser"
+
+    def test_admin_create_user_duplicate(self, admin_client):
+        resp = admin_client.post(
+            "/api/admin/users",
+            data=json.dumps({"username": "testadmin", "password": "pass", "role": "auditor"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 409
+
+    def test_admin_create_user_missing_fields(self, admin_client):
+        resp = admin_client.post(
+            "/api/admin/users",
+            data=json.dumps({"username": "user2"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+
+    def test_admin_delete_user_requires_admin(self, auditor_client):
+        resp = auditor_client.delete("/api/admin/users/1")
+        assert resp.status_code == 403
+
+    def test_admin_cannot_delete_self(self, tmp_instance, admin_client):
+        from app.db import get_user_by_username
+        admin_row = get_user_by_username(tmp_instance, "testadmin")
+        resp = admin_client.delete(f"/api/admin/users/{admin_row['id']}")
+        assert resp.status_code == 400
+        data = json.loads(resp.data)
+        assert "own account" in data["error"]
+
+    def test_admin_delete_user(self, tmp_instance, admin_client):
+        from app.db import create_user, get_user_by_username
+        create_user(tmp_instance, "deleteme", "pass", role="auditor")
+        user = get_user_by_username(tmp_instance, "deleteme")
+        resp = admin_client.delete(f"/api/admin/users/{user['id']}")
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert data["deleted"] is True

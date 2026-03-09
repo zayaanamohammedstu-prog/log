@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
-<body class="workbench-page" data-username="{{ user.username }}" data-role="{{ user.role }}">
+<body class="workbench-page" data-username="{{ user.username }}" data-role="{{ user.role }}" data-userid="{{ user.id }}">
 
 <!-- =================== SIDEBAR =================== -->
 <nav class="sidebar" id="sidebar">
@@ -33,12 +33,17 @@
     <li data-tab-link="tab-export">
       <a href="#" onclick="return false;"><span class="nav-icon">📤</span> Export &amp; Visualise</a>
     </li>
+    <li data-tab-link="tab-history">
+      <a href="#" onclick="return false;"><span class="nav-icon">📜</span> Upload History</a>
+    </li>
   </ul>
 
   <div class="sidebar-section-label">System</div>
   <ul class="sidebar-nav">
     {% if user.is_admin %}
-    <li><a href="{{ url_for('admin') }}"><span class="nav-icon">⚙️</span> Admin</a></li>
+    <li data-tab-link="tab-admin">
+      <a href="#" onclick="return false;"><span class="nav-icon">⚙️</span> Admin</a>
+    </li>
     {% endif %}
     <li>
       <a href="#" id="sidebarThemeToggle" onclick="return false;">
@@ -90,6 +95,10 @@
       <button class="tab-btn" data-tab="tab-anomalies">🔍 Anomaly Explorer</button>
       <button class="tab-btn" data-tab="tab-evidence">📋 Evidence &amp; Reports</button>
       <button class="tab-btn" data-tab="tab-export">📤 Export &amp; Visualise</button>
+      <button class="tab-btn" data-tab="tab-history">📜 History</button>
+      {% if user.is_admin %}
+      <button class="tab-btn" data-tab="tab-admin">⚙️ Admin</button>
+      {% endif %}
     </nav>
 
     <!-- ================================================================
@@ -437,6 +446,172 @@
       </div>
 
     </section>
+
+    <!-- ================================================================
+         TAB 5 — UPLOAD HISTORY
+         ================================================================ -->
+    <section class="tab-panel" id="tab-history">
+
+      <div>
+        <div class="section-title">📜 Upload History</div>
+        <p class="section-desc">
+          Every file upload is stored individually. Click <strong>Load</strong> to
+          restore a past run's results into the dashboard, or <strong>Report</strong>
+          to download the HTML audit report for that run.
+        </p>
+      </div>
+
+      <div class="table-controls">
+        <button class="btn btn-secondary btn-sm" id="btnRefreshHistory">🔄 Refresh</button>
+      </div>
+
+      <div class="table-wrapper">
+        <table id="historyTable">
+          <thead>
+            <tr>
+              <th>Run #</th>
+              <th>Date / Time (UTC)</th>
+              <th>Uploaded By</th>
+              <th>Type</th>
+              <th>File / Source</th>
+              <th>Anomalies</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody">
+            <tr><td colspan="7" class="placeholder">Loading history…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </section>
+
+    <!-- ================================================================
+         TAB 6 — ADMIN (admin role only)
+         ================================================================ -->
+    {% if user.is_admin %}
+    <section class="tab-panel" id="tab-admin">
+
+      <div>
+        <div class="section-title">⚙️ Administration</div>
+        <p class="section-desc">System administration — user management, audit ledger, and system stats.</p>
+      </div>
+
+      <!-- System stats cards -->
+      <div class="cards" id="adminStatsCards">
+        <div class="card card-ok">
+          <div class="card-icon">👥</div>
+          <div class="card-value" id="adminUserCount">—</div>
+          <div class="card-label">Registered Users</div>
+        </div>
+        <div class="card">
+          <div class="card-icon">📂</div>
+          <div class="card-value" id="adminRunCount">—</div>
+          <div class="card-label">Total Runs</div>
+        </div>
+        <div class="card card-warn">
+          <div class="card-icon">🗄</div>
+          <div class="card-value">SQLite</div>
+          <div class="card-label">Database</div>
+        </div>
+        <div class="card">
+          <div class="card-icon">🔖</div>
+          <div class="card-value">v2.0</div>
+          <div class="card-label">Workbench Version</div>
+        </div>
+      </div>
+
+      <!-- User Management -->
+      <div style="margin-top:28px;">
+        <div class="section-title">👥 User Management</div>
+
+        <!-- Create user form -->
+        <div class="admin-info-card" style="margin-bottom:20px;">
+          <h3>Create New User</h3>
+          <div class="admin-form-row">
+            <input type="text" id="newUsername" class="topbar-input" placeholder="Username" autocomplete="off" />
+            <input type="password" id="newPassword" class="topbar-input" placeholder="Password" autocomplete="new-password" />
+            <select id="newRole" class="topbar-select">
+              <option value="auditor">auditor</option>
+              <option value="admin">admin</option>
+            </select>
+            <button class="btn btn-primary btn-sm" id="btnCreateUser">➕ Create User</button>
+          </div>
+          <div id="createUserMsg" style="margin-top:8px;font-size:.85rem;"></div>
+        </div>
+
+        <!-- User table -->
+        <div class="table-wrapper">
+          <table id="adminUsersTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminUsersBody">
+              <tr><td colspan="4" class="placeholder">Loading users…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Audit Ledger -->
+      <div style="margin-top:28px;">
+        <div class="section-title">🔐 Audit Ledger</div>
+        <div class="admin-info-card">
+          <h3>Ledger Integrity</h3>
+          <p class="section-desc" style="margin-bottom:12px;">
+            The audit ledger is a hash-chained record of every analysis run.
+            Use the button below to verify the chain has not been tampered with.
+          </p>
+          <button class="btn btn-secondary btn-sm" id="btnVerifyLedger">🔍 Verify Ledger Chain</button>
+          <div id="ledgerVerifyResult" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="admin-info-card" style="margin-top:16px;">
+          <h3>Recent Ledger Entries</h3>
+          <button class="btn btn-secondary btn-sm" id="btnLoadLedger">📋 Load Entries</button>
+          <div class="table-wrapper" id="ledgerEntriesWrapper" style="margin-top:12px;display:none;">
+            <table id="ledgerTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Timestamp</th>
+                  <th>Actor</th>
+                  <th>Entry Hash (short)</th>
+                </tr>
+              </thead>
+              <tbody id="ledgerBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Session / env notes -->
+      <div class="admin-info-card" style="margin-top:24px;">
+        <h3>Current Session</h3>
+        <table class="info-table">
+          <tr><td>Username</td><td><strong>{{ user.username }}</strong></td></tr>
+          <tr><td>Role</td><td><span class="user-role role-{{ user.role }}">{{ user.role }}</span></td></tr>
+          <tr><td>User ID</td><td>{{ user.id }}</td></tr>
+        </table>
+      </div>
+
+      <div class="admin-info-card" style="margin-top:16px;">
+        <h3>Environment Notes</h3>
+        <ul class="admin-notes">
+          <li>Database is stored in the Flask <code>instance/</code> folder (excluded from version control).</li>
+          <li>Set <code>LOGGUARD_SECRET_KEY</code> to a strong random value in production.</li>
+          <li>The first admin is bootstrapped from <code>LOGGUARD_ADMIN_USERNAME</code> /
+              <code>LOGGUARD_ADMIN_PASSWORD</code> environment variables on an empty database.</li>
+        </ul>
+      </div>
+
+    </section>
+    {% endif %}
 
   </div><!-- /.content-area -->
 </div><!-- /.workbench-main -->

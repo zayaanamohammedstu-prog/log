@@ -39,11 +39,13 @@ def init_db(instance_path: str) -> None:
             );
 
             CREATE TABLE IF NOT EXISTS analysis_runs (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp  TEXT    NOT NULL,
-                username   TEXT    NOT NULL,
-                input_type TEXT    NOT NULL,
-                input_hash TEXT    NOT NULL
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp    TEXT    NOT NULL,
+                username     TEXT    NOT NULL,
+                input_type   TEXT    NOT NULL,
+                input_hash   TEXT    NOT NULL,
+                filename     TEXT    NOT NULL DEFAULT '',
+                summary_json TEXT
             );
 
             CREATE TABLE IF NOT EXISTS analysis_results (
@@ -81,6 +83,16 @@ def init_db(instance_path: str) -> None:
             """
         )
         conn.commit()
+        # Migrate existing DBs: add new columns if they don't exist yet
+        for alter_sql in [
+            "ALTER TABLE analysis_runs ADD COLUMN filename TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE analysis_runs ADD COLUMN summary_json TEXT",
+        ]:
+            try:
+                conn.execute(alter_sql)
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass  # Column already present
     finally:
         conn.close()
 
@@ -143,6 +155,30 @@ def count_users(instance_path: str) -> int:
     try:
         (n,) = conn.execute("SELECT COUNT(*) FROM users").fetchone()
         return n
+    finally:
+        conn.close()
+
+
+def list_users(instance_path: str) -> list[dict]:
+    """Return all users (id, username, role) – password excluded."""
+    conn = sqlite3.connect(_db_path(instance_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT id, username, role FROM users ORDER BY id"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def delete_user(instance_path: str, user_id: int) -> bool:
+    """Delete a user by id. Returns True if a row was deleted."""
+    conn = sqlite3.connect(_db_path(instance_path))
+    try:
+        cur = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+        return cur.rowcount > 0
     finally:
         conn.close()
 

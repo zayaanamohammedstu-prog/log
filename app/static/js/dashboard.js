@@ -30,8 +30,10 @@ function applyTheme(theme) {
   // Update Chart.js global defaults
   const textColor   = isDark ? "#8b949e" : "#636c76";
   const borderColor = isDark ? "#30363d" : "#d0d7de";
-  Chart.defaults.color       = textColor;
-  Chart.defaults.borderColor = borderColor;
+  if (typeof Chart !== "undefined") {
+    Chart.defaults.color       = textColor;
+    Chart.defaults.borderColor = borderColor;
+  }
 
   // Re-render charts if data exists
   if (_lastData) renderAllCharts(_lastData);
@@ -76,9 +78,11 @@ let scatterChart       = null;
 let offHoursChart      = null;
 let endpointChart      = null;
 
-// Chart.js defaults
-Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-Chart.defaults.font.size   = 12;
+// Chart.js defaults (guarded in case CDN fails to load)
+if (typeof Chart !== "undefined") {
+  Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+  Chart.defaults.font.size   = 12;
+}
 
 // ============================================================
 // CACHED DATA
@@ -1084,6 +1088,243 @@ function renderResults(data) {
 }
 
 // ============================================================
+// UPLOAD HISTORY
+// ============================================================
+async function loadRunHistory() {
+  const tbody = document.getElementById("historyBody");
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="7" class="placeholder">Loading…</td></tr>';
+
+  try {
+    const resp = await apiFetch("/api/runs");
+    if (!resp) return;
+    const data = await resp.json();
+    const runs = data.runs || [];
+
+    if (!runs.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="placeholder">No runs yet. Upload a log file to get started.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = runs.map(run => {
+      const ts = run.timestamp
+        ? new Date(run.timestamp).toLocaleString("en-GB", { timeZone: "UTC", hour12: false }) + " UTC"
+        : "—";
+      const typeBadge = `<span class="history-badge-${run.input_type || 'sample'}">${run.input_type || 'sample'}</span>`;
+      const escapedFile = (run.filename || (run.input_type === "sample" ? "sample_logs.txt" : "—"))
+        .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      return `<tr>
+        <td><span class="run-id-badge">Run #${run.id}</span></td>
+        <td>${ts}</td>
+        <td>${(run.username || "—").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</td>
+        <td>${typeBadge}</td>
+        <td style="font-family:monospace;font-size:.82rem;">${escapedFile}</td>
+        <td id="hist-anomalies-${run.id}">—</td>
+        <td>
+          <button class="btn btn-primary btn-sm history-load-btn" data-run-id="${run.id}">▶ Load</button>
+          <button class="btn btn-secondary btn-sm history-load-btn history-report-btn" data-run-id="${run.id}" style="margin-left:6px;">📑 Report</button>
+        </td>
+      </tr>`;
+    }).join("");
+
+    // Attach handlers via event delegation
+    tbody.querySelectorAll(".history-load-btn:not(.history-report-btn)").forEach(btn => {
+      btn.addEventListener("click", () => loadHistoryRun(parseInt(btn.dataset.runId)));
+    });
+    tbody.querySelectorAll(".history-report-btn").forEach(btn => {
+      btn.addEventListener("click", () => downloadRunReport(parseInt(btn.dataset.runId)));
+    });
+
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="placeholder">Error loading history: ${err.message}</td></tr>`;
+  }
+}
+
+async function loadHistoryRun(runId) {
+  showToast(`Loading Run #${runId}…`, "info", 2000);
+  try {
+    const resp = await apiFetch(`/api/runs/${runId}/summary`);
+    if (!resp) return;
+    const data = await resp.json();
+    if (data.error) {
+      showToast("Could not load run: " + data.error, "error");
+      return;
+    }
+    renderResults(data);
+    switchTab("tab-overview");
+    showToast(`Run #${runId} loaded successfully.`, "success");
+  } catch (err) {
+    showToast("Network error loading run: " + err.message, "error");
+  }
+}
+
+function downloadRunReport(runId) {
+  const a = document.createElement("a");
+  a.href = `/api/runs/${runId}/report`;
+  a.target = "_blank";
+  a.download = `logguard_report_run_${runId}.html`;
+  a.click();
+  showToast(`HTML report for Run #${runId} download started.`, "success");
+}
+
+// ============================================================
+// ADMIN PANEL
+// ============================================================
+async function loadAdminPanel() {
+  await Promise.all([loadAdminStats(), loadAdminUsers()]);
+}
+
+async function loadAdminStats() {
+  try {
+    const resp = await apiFetch("/api/admin/stats");
+    if (!resp) return;
+    const data = await resp.json();
+    if (data.error) return;
+    const uc = document.getElementById("adminUserCount");
+    const rc = document.getElementById("adminRunCount");
+    if (uc) uc.textContent = data.user_count ?? "—";
+    if (rc) rc.textContent = data.total_runs ?? "—";
+  } catch (_) { /* ignore */ }
+}
+
+async function loadAdminUsers() {
+  const tbody = document.getElementById("adminUsersBody");
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="4" class="placeholder">Loading…</td></tr>';
+  try {
+    const resp = await apiFetch("/api/admin/users");
+    if (!resp) return;
+    const data = await resp.json();
+    if (data.error) {
+      tbody.innerHTML = `<tr><td colspan="4" class="placeholder">${data.error}</td></tr>`;
+      return;
+    }
+    const users = data.users || [];
+    const currentId = parseInt(document.body.dataset.userid || "0");
+    tbody.innerHTML = users.map(u => {
+      const isSelf = u.id === currentId;
+      const delBtn = isSelf
+        ? `<span style="color:var(--text-muted);font-size:.8rem;">(current user)</span>`
+        : `<button class="btn btn-sm admin-del-user-btn"
+              data-user-id="${u.id}"
+              style="background:rgba(248,81,73,.15);color:var(--danger);border:1px solid rgba(248,81,73,.3);font-size:.8rem;">🗑 Delete</button>`;
+      const escapedUsername = u.username.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      return `<tr data-username="${escapedUsername}">
+        <td>${u.id}</td>
+        <td><strong>${escapedUsername}</strong></td>
+        <td><span class="user-role role-${u.role}">${u.role}</span></td>
+        <td>${delBtn}</td>
+      </tr>`;
+    }).join("");
+
+    // Attach delete handlers via event delegation
+    tbody.querySelectorAll(".admin-del-user-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const userId = parseInt(btn.dataset.userId);
+        const row = btn.closest("tr");
+        const username = row ? (row.dataset.username || "") : "";
+        deleteAdminUser(userId, username);
+      });
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="4" class="placeholder">Error: ${err.message}</td></tr>`;
+  }
+}
+
+async function createAdminUser() {
+  const username = (document.getElementById("newUsername")?.value || "").trim();
+  const password = document.getElementById("newPassword")?.value || "";
+  const role = document.getElementById("newRole")?.value || "auditor";
+  const msgEl = document.getElementById("createUserMsg");
+
+  if (!username || !password) {
+    if (msgEl) { msgEl.textContent = "Username and password are required."; msgEl.style.color = "var(--danger)"; }
+    return;
+  }
+
+  try {
+    const resp = await apiFetch("/api/admin/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password, role }),
+    });
+    if (!resp) return;
+    const data = await resp.json();
+    if (data.error) {
+      if (msgEl) { msgEl.textContent = data.error; msgEl.style.color = "var(--danger)"; }
+      return;
+    }
+    if (msgEl) { msgEl.textContent = `User '${username}' created successfully.`; msgEl.style.color = "var(--success)"; }
+    document.getElementById("newUsername").value = "";
+    document.getElementById("newPassword").value = "";
+    await loadAdminUsers();
+    await loadAdminStats();
+    showToast(`User '${username}' (${role}) created.`, "success");
+  } catch (err) {
+    if (msgEl) { msgEl.textContent = "Network error: " + err.message; msgEl.style.color = "var(--danger)"; }
+  }
+}
+
+async function deleteAdminUser(userId, username) {
+  if (!confirm(`Delete user '${username}'? This cannot be undone.`)) return;
+  try {
+    const resp = await apiFetch(`/api/admin/users/${userId}`, { method: "DELETE" });
+    if (!resp) return;
+    const data = await resp.json();
+    if (data.error) { showToast(data.error, "error"); return; }
+    showToast(`User '${username}' deleted.`, "success");
+    await loadAdminUsers();
+    await loadAdminStats();
+  } catch (err) {
+    showToast("Network error: " + err.message, "error");
+  }
+}
+
+async function verifyLedger() {
+  const resultEl = document.getElementById("ledgerVerifyResult");
+  if (resultEl) resultEl.textContent = "Verifying…";
+  try {
+    const resp = await apiFetch("/api/audit/verify");
+    if (!resp) return;
+    const data = await resp.json();
+    if (resultEl) {
+      if (data.valid) {
+        resultEl.innerHTML = `<span style="color:var(--success)">✅ Ledger is intact — all ${data.entry_count} entries verified.</span>`;
+      } else {
+        resultEl.innerHTML = `<span style="color:var(--danger)">❌ Integrity failure: ${data.error || "chain broken"}</span>`;
+      }
+    }
+  } catch (err) {
+    if (resultEl) resultEl.textContent = "Error: " + err.message;
+  }
+}
+
+async function loadLedgerEntries() {
+  const wrapper = document.getElementById("ledgerEntriesWrapper");
+  const tbody = document.getElementById("ledgerBody");
+  if (!wrapper || !tbody) return;
+  wrapper.style.display = "";
+  tbody.innerHTML = '<tr><td colspan="4" class="placeholder">Loading…</td></tr>';
+  try {
+    const resp = await apiFetch("/api/audit/entries");
+    if (!resp) return;
+    const data = await resp.json();
+    const entries = (data.entries || []).slice().reverse();
+    if (!entries.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="placeholder">No entries yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = entries.map((e, i) => {
+      const ts = e.timestamp ? new Date(e.timestamp).toLocaleString("en-GB", { timeZone: "UTC", hour12: false }) + " UTC" : "—";
+      const shortHash = e.entry_hash ? e.entry_hash.substring(0, 16) + "…" : "—";
+      return `<tr><td>${entries.length - i}</td><td>${ts}</td><td>${e.actor || "—"}</td><td style="font-family:monospace;font-size:.78rem;">${shortHash}</td></tr>`;
+    }).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="4" class="placeholder">Error: ${err.message}</td></tr>`;
+  }
+}
+
+// ============================================================
 // API FETCH
 // ============================================================
 async function apiFetch(url, options = {}) {
@@ -1257,6 +1498,28 @@ document.addEventListener("DOMContentLoaded", async () => {
     a.download = `logguard_report_run_${_lastRunId}.html`;
     a.click();
     showToast("HTML report download started.", "success");
+  });
+
+  // History tab
+  document.getElementById("btnRefreshHistory")?.addEventListener("click", loadRunHistory);
+
+  // Admin tab
+  document.getElementById("btnCreateUser")?.addEventListener("click", createAdminUser);
+  document.getElementById("btnVerifyLedger")?.addEventListener("click", verifyLedger);
+  document.getElementById("btnLoadLedger")?.addEventListener("click", loadLedgerEntries);
+
+  // Load history/admin panels when their tabs are activated
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.tab === "tab-history") loadRunHistory();
+      if (btn.dataset.tab === "tab-admin") loadAdminPanel();
+    });
+  });
+  document.querySelectorAll("[data-tab-link]").forEach(li => {
+    li.querySelector("a")?.addEventListener("click", () => {
+      if (li.dataset.tabLink === "tab-history") loadRunHistory();
+      if (li.dataset.tabLink === "tab-admin") loadAdminPanel();
+    });
   });
 
   // Drill-down modal close

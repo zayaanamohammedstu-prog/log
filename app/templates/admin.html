@@ -21,6 +21,7 @@
     <li><a href="{{ url_for('index') }}"><span class="nav-icon">📊</span> Overview</a></li>
     <li><a href="{{ url_for('index') }}#anomalies"><span class="nav-icon">🔍</span> Anomaly Explorer</a></li>
     <li><a href="{{ url_for('index') }}#charts"><span class="nav-icon">📈</span> Evidence &amp; Reports</a></li>
+    <li><a href="{{ url_for('index') }}#history"><span class="nav-icon">📜</span> Upload History</a></li>
     {% if user.is_admin %}
     <li class="active"><a href="{{ url_for('admin') }}"><span class="nav-icon">⚙️</span> Admin</a></li>
     {% endif %}

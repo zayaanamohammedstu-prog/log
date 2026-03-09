@@ -25,11 +25,13 @@ def init_run_store(instance_path: str) -> None:
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS analysis_runs (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp  TEXT    NOT NULL,
-                username   TEXT    NOT NULL,
-                input_type TEXT    NOT NULL,
-                input_hash TEXT    NOT NULL
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp    TEXT    NOT NULL,
+                username     TEXT    NOT NULL,
+                input_type   TEXT    NOT NULL,
+                input_hash   TEXT    NOT NULL,
+                filename     TEXT    NOT NULL DEFAULT '',
+                summary_json TEXT
             );
 
             CREATE TABLE IF NOT EXISTS analysis_results (
@@ -56,6 +58,16 @@ def init_run_store(instance_path: str) -> None:
             """
         )
         conn.commit()
+        # Migrate existing DBs: add new columns if they don't exist yet
+        for alter_sql in [
+            "ALTER TABLE analysis_runs ADD COLUMN filename TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE analysis_runs ADD COLUMN summary_json TEXT",
+        ]:
+            try:
+                conn.execute(alter_sql)
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass  # Column already present
     finally:
         conn.close()
 
@@ -65,15 +77,18 @@ def save_run(
     username: str,
     input_type: str,
     input_hash: str,
+    filename: str = "",
+    summary_json: str = "",
 ) -> int:
     """Insert a new analysis run row. Returns the new run_id."""
     conn = sqlite3.connect(_db_path(instance_path))
     try:
         ts = datetime.now(timezone.utc).isoformat()
         cur = conn.execute(
-            "INSERT INTO analysis_runs (timestamp, username, input_type, input_hash)"
-            " VALUES (?, ?, ?, ?)",
-            (ts, username, input_type, input_hash),
+            "INSERT INTO analysis_runs"
+            " (timestamp, username, input_type, input_hash, filename, summary_json)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (ts, username, input_type, input_hash, filename, summary_json or None),
         )
         conn.commit()
         return cur.lastrowid
@@ -130,14 +145,40 @@ def get_run(instance_path: str, run_id: int) -> dict | None:
 
 
 def list_runs(instance_path: str, limit: int = 50) -> list[dict]:
-    """Return the most recent runs, newest first."""
+    """Return the most recent runs, newest first (summary_json excluded)."""
     conn = sqlite3.connect(_db_path(instance_path))
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
-            "SELECT * FROM analysis_runs ORDER BY id DESC LIMIT ?", (limit,)
+            "SELECT id, timestamp, username, input_type, input_hash, filename"
+            " FROM analysis_runs ORDER BY id DESC LIMIT ?",
+            (limit,),
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_run_summary(instance_path: str, run_id: int) -> dict | None:
+    """Return the stored summary JSON for a run, or None if not found/missing."""
+    conn = sqlite3.connect(_db_path(instance_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT id, timestamp, username, input_type, filename, summary_json"
+            " FROM analysis_runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        raw = row["summary_json"]
+        if not raw:
+            return None
+        summary = json.loads(raw)
+        summary["run_id"] = row["id"]
+        summary["timestamp"] = row["timestamp"]
+        summary["filename"] = row["filename"] or ""
+        return summary
     finally:
         conn.close()
 
