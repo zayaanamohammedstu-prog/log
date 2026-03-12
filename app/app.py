@@ -5,9 +5,10 @@ LogGuard Flask application.
 
 Routes
 ------
-GET  /              → Serve the dashboard (index.html) – login required
+GET  /              → Public landing page; authenticated users redirected by role
+GET  /auditor       → Auditor workbench (index.html) – auditor role only
 GET  /login         → Login page
-POST /login         → Authenticate and start session
+POST /login         → Authenticate and redirect by role
 GET  /logout        → End session
 GET  /admin         → Admin page – admin role required
 GET  /api/status    → Health-check / summary statistics – login required
@@ -381,15 +382,30 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
 # ---------------------------------------------------------------------------
 
 @app.route("/")
+def main():
+    """Public landing page. Authenticated users are redirected to their portal."""
+    if current_user.is_authenticated:
+        if current_user.is_admin:
+            return redirect(url_for("admin"))
+        return redirect(url_for("auditor"))
+    return render_template("main.html")
+
+
+@app.route("/auditor")
 @login_required
-def index():
+def auditor():
+    """Auditor-only workbench portal. Admins are denied access (403)."""
+    if current_user.is_admin:
+        return render_template("admin.html", forbidden=True, user=current_user), 403
     return render_template("index.html", user=current_user)
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("index"))
+        if current_user.is_admin:
+            return redirect(url_for("admin"))
+        return redirect(url_for("auditor"))
     error = None
     if request.method == "POST":
         username = request.form.get("username", "").strip()
@@ -398,11 +414,10 @@ def login():
         if row and verify_password(row["password"], password):
             user = User(row)
             login_user(user)
-            next_page = request.args.get("next") or url_for("index")
-            # Prevent open-redirect: only follow relative paths
-            if not next_page.startswith("/"):
-                next_page = url_for("index")
-            return redirect(next_page)
+            # Route by role; ignore next= to enforce separation of duties
+            if user.is_admin:
+                return redirect(url_for("admin"))
+            return redirect(url_for("auditor"))
         error = "Invalid username or password."
     no_users = count_users(app.instance_path) == 0
     return render_template("login.html", error=error, no_users=no_users)

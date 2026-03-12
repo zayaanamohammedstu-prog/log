@@ -18,10 +18,10 @@
     </div>
   </div>
   <ul class="sidebar-nav">
-    <li><a href="{{ url_for('index') }}"><span class="nav-icon">📊</span> Overview</a></li>
-    <li><a href="{{ url_for('index') }}#anomalies"><span class="nav-icon">🔍</span> Anomaly Explorer</a></li>
-    <li><a href="{{ url_for('index') }}#charts"><span class="nav-icon">📈</span> Evidence &amp; Reports</a></li>
-    <li><a href="{{ url_for('index') }}#history"><span class="nav-icon">📜</span> Upload History</a></li>
+    <li><a href="{{ url_for('auditor') }}"><span class="nav-icon">📊</span> Overview</a></li>
+    <li><a href="{{ url_for('auditor') }}#anomalies"><span class="nav-icon">🔍</span> Anomaly Explorer</a></li>
+    <li><a href="{{ url_for('auditor') }}#charts"><span class="nav-icon">📈</span> Evidence &amp; Reports</a></li>
+    <li><a href="{{ url_for('auditor') }}#history"><span class="nav-icon">📜</span> Upload History</a></li>
     {% if user.is_admin %}
     <li class="active"><a href="{{ url_for('admin') }}"><span class="nav-icon">⚙️</span> Admin</a></li>
     {% endif %}
@@ -58,7 +58,7 @@
       <h2>Access Denied</h2>
       <p>This page is restricted to <strong>admin</strong> users only.</p>
       <p>Your current role: <span class="user-role role-{{ user.role }}">{{ user.role }}</span></p>
-      <a href="{{ url_for('index') }}" class="btn btn-primary" style="margin-top:16px;">Back to Dashboard</a>
+      <a href="{{ url_for('admin') if user.is_admin else url_for('auditor') }}" class="btn btn-primary" style="margin-top:16px;">Back to Dashboard</a>
     </div>
 
     {% else %}
