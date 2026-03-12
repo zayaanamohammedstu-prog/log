@@ -71,7 +71,25 @@ pip install -r requirements.txt
 
 ### 2. Set up the first admin account
 
-On the first run, LogGuard creates the admin user from environment variables.
+**Option A — Self-service registration (easiest for local dev)**
+
+When no users exist yet, the `/register` page is automatically enabled.
+Simply start the server and open `http://localhost:5000/register` in your browser.
+The first account you create will automatically receive the **admin** role.
+
+You can also enable public signup at any time by setting:
+
+```bash
+export LOGGUARD_ENABLE_PUBLIC_SIGNUP=true
+```
+
+> **Windows (PowerShell):**
+> ```powershell
+> $env:LOGGUARD_ENABLE_PUBLIC_SIGNUP="true"
+> ```
+
+**Option B — Bootstrap via environment variables**
+
 Set these **before** starting the server:
 
 ```bash
@@ -89,6 +107,15 @@ export LOGGUARD_SECRET_KEY=your-random-secret-key   # required in production
 
 If these variables are not set when no users exist, the app starts but logs a
 warning and the login page shows a setup notice — no user will be created.
+
+**Admin recovery (locked out? no admin exists?)**
+
+If you already have users in the database but no admin account (e.g., the
+original admin was deleted), set `LOGGUARD_ADMIN_USERNAME` and
+`LOGGUARD_ADMIN_PASSWORD` and restart the server.  LogGuard will
+automatically **promote** an existing user with that name to admin, or
+**create** a new admin account if the username doesn't exist yet. This is safe
+and idempotent: it only runs when there is no existing admin.
 
 ### 3. Run the application
 
@@ -114,6 +141,7 @@ in step 2.
 | `LOGGUARD_ADMIN_USERNAME` | Username for the bootstrap admin account |
 | `LOGGUARD_ADMIN_PASSWORD` | Password for the bootstrap admin account (hashed with Werkzeug) |
 | `LOGGUARD_SECRET_KEY` | Flask session secret key (use a long random string in production) |
+| `LOGGUARD_ENABLE_PUBLIC_SIGNUP` | Set to `true` to allow anyone to self-register an account |
 
 - The SQLite database (`logguard.db`) is stored in Flask's `instance/` folder and is excluded from version control.
 - Passwords are never stored in plaintext — Werkzeug's `pbkdf2:sha256` is used.

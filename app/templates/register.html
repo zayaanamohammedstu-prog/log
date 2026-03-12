@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LogGuard — Sign In</title>
+  <title>LogGuard — Create Account</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
 <body class="login-page">
@@ -19,21 +19,23 @@
       </div>
     </div>
 
-    <h1 class="login-title">Sign in to your account</h1>
+    <h1 class="login-title">Create an account</h1>
 
-    {% if no_users %}
-    <div class="alert alert-warning">
-      <strong>Setup required:</strong> No users exist yet. Set
-      <code>LOGGUARD_ADMIN_USERNAME</code> and <code>LOGGUARD_ADMIN_PASSWORD</code>
-      environment variables and restart the server to create the first admin account.
+    {% if signup_disabled %}
+    <div class="alert alert-danger">
+      <strong>Registration is disabled.</strong>
+      Account creation is not currently available. Contact your administrator.
     </div>
-    {% endif %}
+    <p style="text-align:center;margin-top:1rem;">
+      <a href="{{ url_for('login') }}">← Back to Sign In</a>
+    </p>
+    {% else %}
 
     {% if error %}
     <div class="alert alert-danger">{{ error }}</div>
     {% endif %}
 
-    <form method="POST" action="{{ url_for('login', next=request.args.get('next', '')) }}" class="login-form">
+    <form method="POST" action="{{ url_for('register') }}" class="login-form">
       <div class="form-group">
         <label for="username">Username</label>
         <input
@@ -43,7 +45,8 @@
           autocomplete="username"
           required
           autofocus
-          placeholder="Enter your username"
+          placeholder="Choose a username (min 3 chars)"
+          minlength="3"
         />
       </div>
       <div class="form-group">
@@ -52,18 +55,30 @@
           type="password"
           id="password"
           name="password"
-          autocomplete="current-password"
+          autocomplete="new-password"
           required
-          placeholder="Enter your password"
+          placeholder="Choose a password (min 6 chars)"
+          minlength="6"
         />
       </div>
-      <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+      <div class="form-group">
+        <label for="confirm_password">Confirm Password</label>
+        <input
+          type="password"
+          id="confirm_password"
+          name="confirm_password"
+          autocomplete="new-password"
+          required
+          placeholder="Re-enter your password"
+        />
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Create Account</button>
     </form>
 
-    {% if signup_allowed %}
     <p style="text-align:center;margin-top:1rem;font-size:.875rem;">
-      No account yet? <a href="{{ url_for('register') }}">Create an account</a>
+      Already have an account? <a href="{{ url_for('login') }}">Sign In</a>
     </p>
+
     {% endif %}
 
     <p class="login-footer-text">LogGuard Audit Workbench &copy; 2024</p>
