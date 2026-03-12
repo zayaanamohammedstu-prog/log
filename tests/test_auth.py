@@ -83,8 +83,28 @@ class TestLogin:
             follow_redirects=True,
         )
         assert resp.status_code == 200
-        # After login, should see the dashboard
+        # After login, auditor should see the audit workbench
         assert b"LogGuard" in resp.data
+
+    def test_login_redirects_auditor_to_auditor_portal(self, tmp_instance, client):
+        create_user(tmp_instance, "auditor1", "pass1", role="auditor")
+        resp = client.post(
+            "/login",
+            data={"username": "auditor1", "password": "pass1"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert "/auditor" in resp.headers["Location"]
+
+    def test_login_redirects_admin_to_admin_portal(self, tmp_instance, client):
+        create_user(tmp_instance, "admin1", "pass1", role="admin")
+        resp = client.post(
+            "/login",
+            data={"username": "admin1", "password": "pass1"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert "/admin" in resp.headers["Location"]
 
     def test_login_wrong_password(self, tmp_instance, client):
         create_user(tmp_instance, "bob", "correct", role="auditor")
@@ -116,14 +136,41 @@ class TestLogin:
 # ---------------------------------------------------------------------------
 
 class TestProtectedRoutes:
-    def test_index_redirects_when_not_logged_in(self, client):
+    def test_index_public_when_not_logged_in(self, client):
+        """GET / is now a public landing page – must return 200 with landing content."""
         resp = client.get("/", follow_redirects=False)
-        assert resp.status_code in (302, 401)
-
-    def test_index_accessible_when_logged_in(self, auditor_client):
-        resp = auditor_client.get("/")
         assert resp.status_code == 200
         assert b"LogGuard" in resp.data
+        assert b"Sign In" in resp.data
+
+    def test_index_redirects_to_auditor_when_logged_in_as_auditor(self, auditor_client):
+        """Authenticated auditor hitting / is redirected to /auditor."""
+        resp = auditor_client.get("/", follow_redirects=False)
+        assert resp.status_code == 302
+        assert "/auditor" in resp.headers["Location"]
+
+    def test_index_redirects_to_admin_when_logged_in_as_admin(self, admin_client):
+        """Authenticated admin hitting / is redirected to /admin."""
+        resp = admin_client.get("/", follow_redirects=False)
+        assert resp.status_code == 302
+        assert "/admin" in resp.headers["Location"]
+
+    def test_auditor_requires_auth(self, client):
+        """GET /auditor without auth should redirect to login (302)."""
+        resp = client.get("/auditor", follow_redirects=False)
+        assert resp.status_code in (302, 401)
+
+    def test_auditor_accessible_for_auditor(self, auditor_client):
+        """Auditor user can access /auditor (200)."""
+        resp = auditor_client.get("/auditor")
+        assert resp.status_code == 200
+        assert b"LogGuard" in resp.data
+
+    def test_auditor_forbidden_for_admin(self, admin_client):
+        """Admin user accessing /auditor gets 403."""
+        resp = admin_client.get("/auditor")
+        assert resp.status_code == 403
+        assert b"Access Denied" in resp.data
 
     def test_api_status_requires_auth(self, client):
         resp = client.get("/api/status")

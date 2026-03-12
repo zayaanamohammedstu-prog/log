@@ -42,7 +42,7 @@ def client(tmp_instance):
 
 class TestRoutes:
     def test_index_returns_html(self, client):
-        resp = client.get("/")
+        resp = client.get("/auditor")
         assert resp.status_code == 200
         assert b"LogGuard" in resp.data
 
