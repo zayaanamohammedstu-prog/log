@@ -289,3 +289,173 @@ class TestAdminRole:
         assert resp.status_code == 200
         data = json.loads(resp.data)
         assert data["deleted"] is True
+
+
+# ---------------------------------------------------------------------------
+# Registration tests
+# ---------------------------------------------------------------------------
+
+class TestRegistration:
+    def test_register_page_accessible_when_no_users(self, client):
+        """GET /register returns 200 when no users exist."""
+        resp = client.get("/register")
+        assert resp.status_code == 200
+        assert b"Create" in resp.data
+
+    def test_register_disabled_when_users_exist_and_no_flag(self, tmp_instance, client):
+        """GET /register returns 403 when users exist and public signup is off."""
+        create_user(tmp_instance, "existing", "pass123", role="auditor")
+        resp = client.get("/register")
+        assert resp.status_code == 403
+        assert b"disabled" in resp.data.lower()
+
+    def test_register_enabled_by_env_flag(self, tmp_instance, client, monkeypatch):
+        """GET /register returns 200 when LOGGUARD_ENABLE_PUBLIC_SIGNUP=true."""
+        create_user(tmp_instance, "existing", "pass123", role="auditor")
+        monkeypatch.setenv("LOGGUARD_ENABLE_PUBLIC_SIGNUP", "true")
+        resp = client.get("/register")
+        assert resp.status_code == 200
+        assert b"Create" in resp.data
+
+    def test_first_registered_user_becomes_admin(self, tmp_instance, client):
+        """When no users exist, the first registered user gets the admin role."""
+        resp = client.post(
+            "/register",
+            data={
+                "username": "firstuser",
+                "password": "password1",
+                "confirm_password": "password1",
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        from app.db import get_user_by_username
+        row = get_user_by_username(tmp_instance, "firstuser")
+        assert row is not None
+        assert row["role"] == "admin"
+
+    def test_subsequent_registered_user_becomes_auditor(self, tmp_instance, client, monkeypatch):
+        """When users already exist and signup is enabled, new users become auditors."""
+        monkeypatch.setenv("LOGGUARD_ENABLE_PUBLIC_SIGNUP", "true")
+        create_user(tmp_instance, "existing_admin", "adminpass", role="admin")
+        resp = client.post(
+            "/register",
+            data={
+                "username": "newauditor",
+                "password": "password1",
+                "confirm_password": "password1",
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        from app.db import get_user_by_username
+        row = get_user_by_username(tmp_instance, "newauditor")
+        assert row is not None
+        assert row["role"] == "auditor"
+
+    def test_register_redirects_to_login_on_success(self, client):
+        """Successful registration redirects to /login."""
+        resp = client.post(
+            "/register",
+            data={
+                "username": "newuser",
+                "password": "pass123",
+                "confirm_password": "pass123",
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert "/login" in resp.headers["Location"]
+
+    def test_register_duplicate_username(self, tmp_instance, client, monkeypatch):
+        """Registering with an existing username shows an error."""
+        create_user(tmp_instance, "taken", "pass123", role="auditor")
+        # Ensure signup is allowed even though a user exists
+        monkeypatch.setenv("LOGGUARD_ENABLE_PUBLIC_SIGNUP", "true")
+        resp = client.post(
+            "/register",
+            data={
+                "username": "taken",
+                "password": "pass123",
+                "confirm_password": "pass123",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"already taken" in resp.data
+
+    def test_register_password_mismatch(self, client):
+        """Mismatched passwords show an error."""
+        resp = client.post(
+            "/register",
+            data={
+                "username": "user1",
+                "password": "pass123",
+                "confirm_password": "different",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"do not match" in resp.data
+
+    def test_register_short_password(self, client):
+        """Password shorter than 6 characters is rejected."""
+        resp = client.post(
+            "/register",
+            data={
+                "username": "user1",
+                "password": "abc",
+                "confirm_password": "abc",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"6 characters" in resp.data
+
+    def test_register_short_username(self, client):
+        """Username shorter than 3 characters is rejected."""
+        resp = client.post(
+            "/register",
+            data={
+                "username": "ab",
+                "password": "pass123",
+                "confirm_password": "pass123",
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"3 characters" in resp.data
+
+
+# ---------------------------------------------------------------------------
+# Admin recovery (bootstrap) tests
+# ---------------------------------------------------------------------------
+
+class TestAdminRecovery:
+    def test_bootstrap_promotes_existing_user_to_admin(self, tmp_instance):
+        """When users exist but no admin, bootstrap with env vars promotes the named user."""
+        from app.db import count_admins, get_user_by_username, promote_user_to_admin
+        # Create a regular user first (no admin)
+        create_user(tmp_instance, "recovery_user", "pass123", role="auditor")
+        assert count_admins(tmp_instance) == 0
+        # Simulate the promotion
+        result = promote_user_to_admin(tmp_instance, "recovery_user")
+        assert result is True
+        row = get_user_by_username(tmp_instance, "recovery_user")
+        assert row["role"] == "admin"
+        assert count_admins(tmp_instance) == 1
+
+    def test_promote_nonexistent_user_returns_false(self, tmp_instance):
+        """promote_user_to_admin returns False for a username that doesn't exist."""
+        from app.db import promote_user_to_admin
+        result = promote_user_to_admin(tmp_instance, "ghost")
+        assert result is False
+
+    def test_count_admins(self, tmp_instance):
+        """count_admins returns 0 initially and increments after creating an admin."""
+        from app.db import count_admins
+        assert count_admins(tmp_instance) == 0
+        create_user(tmp_instance, "an_admin", "pass", role="admin")
+        assert count_admins(tmp_instance) == 1
+        create_user(tmp_instance, "auditor2", "pass", role="auditor")
+        assert count_admins(tmp_instance) == 1

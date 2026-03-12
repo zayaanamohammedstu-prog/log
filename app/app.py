@@ -85,6 +85,8 @@ from db import (  # noqa: E402
     get_user_by_username,
     get_user_by_id,
     count_users,
+    count_admins,
+    promote_user_to_admin,
     verify_password,
     list_users,
     delete_user,
@@ -150,13 +152,18 @@ def _unauthorized():
 # DB bootstrap: create admin from env vars on first run
 # ---------------------------------------------------------------------------
 def _bootstrap_db() -> None:
-    """Initialise the DB and create the first admin if no users exist."""
+    """Initialise the DB and create the first admin if no users exist.
+
+    Admin recovery: if env vars are set and *no admin* exists (even when users
+    are already present), the named account is created or promoted to admin.
+    This lets operators recover from a locked-out state without resetting the DB.
+    """
     init_db(app.instance_path)
     init_run_store(app.instance_path)
     init_ledger(app.instance_path)
+    username = os.environ.get("LOGGUARD_ADMIN_USERNAME", "").strip()
+    password = os.environ.get("LOGGUARD_ADMIN_PASSWORD", "").strip()
     if count_users(app.instance_path) == 0:
-        username = os.environ.get("LOGGUARD_ADMIN_USERNAME", "").strip()
-        password = os.environ.get("LOGGUARD_ADMIN_PASSWORD", "").strip()
         if username and password:
             create_user(app.instance_path, username, password, role="admin")
             app.logger.info("Bootstrap: admin user '%s' created.", username)
@@ -164,6 +171,21 @@ def _bootstrap_db() -> None:
             app.logger.warning(
                 "No users exist. Set LOGGUARD_ADMIN_USERNAME and "
                 "LOGGUARD_ADMIN_PASSWORD env vars to create the first admin."
+            )
+    elif username and password and count_admins(app.instance_path) == 0:
+        # Users exist but there is no admin – promote or create the named account.
+        existing = get_user_by_username(app.instance_path, username)
+        if existing:
+            if promote_user_to_admin(app.instance_path, username):
+                app.logger.info(
+                    "Bootstrap recovery: existing user '%s' promoted to admin.",
+                    username,
+                )
+        else:
+            create_user(app.instance_path, username, password, role="admin")
+            app.logger.info(
+                "Bootstrap recovery: admin user '%s' created (no admin existed).",
+                username,
             )
 
 
@@ -381,6 +403,64 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
 # Routes
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Self-service registration
+# ---------------------------------------------------------------------------
+
+def _signup_allowed() -> bool:
+    """Return True when self-service registration is permitted.
+
+    Registration is open when:
+    - No users exist yet (first-time setup), OR
+    - The LOGGUARD_ENABLE_PUBLIC_SIGNUP env var is set to a truthy value.
+    """
+    if os.environ.get("LOGGUARD_ENABLE_PUBLIC_SIGNUP", "").lower() in (
+        "1", "true", "yes"
+    ):
+        return True
+    return count_users(app.instance_path) == 0
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    """Self-service registration.  Only accessible when signup is allowed."""
+    if current_user.is_authenticated:
+        if current_user.is_admin:
+            return redirect(url_for("admin"))
+        return redirect(url_for("auditor"))
+
+    if not _signup_allowed():
+        return render_template(
+            "register.html",
+            error=None,
+            signup_disabled=True,
+        ), 403
+
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        confirm  = request.form.get("confirm_password", "")
+
+        if not username or not password:
+            error = "Username and password are required."
+        elif len(username) < 3:
+            error = "Username must be at least 3 characters."
+        elif len(password) < 6:
+            error = "Password must be at least 6 characters."
+        elif password != confirm:
+            error = "Passwords do not match."
+        elif get_user_by_username(app.instance_path, username):
+            error = "That username is already taken."
+        else:
+            # First user becomes admin; subsequent users get auditor role.
+            role = "admin" if count_users(app.instance_path) == 0 else "auditor"
+            create_user(app.instance_path, username, password, role=role)
+            return redirect(url_for("login"))
+
+    return render_template("register.html", error=error, signup_disabled=False)
+
+
 @app.route("/")
 def main():
     """Public landing page. Authenticated users are redirected to their portal."""
@@ -388,7 +468,7 @@ def main():
         if current_user.is_admin:
             return redirect(url_for("admin"))
         return redirect(url_for("auditor"))
-    return render_template("main.html")
+    return render_template("main.html", signup_allowed=_signup_allowed())
 
 
 @app.route("/auditor")
@@ -420,7 +500,12 @@ def login():
             return redirect(url_for("auditor"))
         error = "Invalid username or password."
     no_users = count_users(app.instance_path) == 0
-    return render_template("login.html", error=error, no_users=no_users)
+    return render_template(
+        "login.html",
+        error=error,
+        no_users=no_users,
+        signup_allowed=_signup_allowed(),
+    )
 
 
 @app.route("/logout", methods=["GET", "POST"])

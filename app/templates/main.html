@@ -175,7 +175,11 @@
   </p>
   <div class="landing-cta">
     <a href="{{ url_for('login') }}" class="btn-landing-primary">Sign In to Your Portal</a>
+    {% if signup_allowed %}
+    <a href="{{ url_for('register') }}" class="btn-landing-secondary">Create an Account</a>
+    {% else %}
     <a href="#features" class="btn-landing-secondary">Learn More</a>
+    {% endif %}
   </div>
 </section>
 

@@ -186,3 +186,29 @@ def delete_user(instance_path: str, user_id: int) -> bool:
 def verify_password(stored_hash: str, password: str) -> bool:
     """Return True if *password* matches *stored_hash*."""
     return check_password_hash(stored_hash, password)
+
+
+def count_admins(instance_path: str) -> int:
+    """Return the number of users with role='admin'."""
+    conn = sqlite3.connect(_db_path(instance_path))
+    try:
+        (n,) = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE role = 'admin'"
+        ).fetchone()
+        return n
+    finally:
+        conn.close()
+
+
+def promote_user_to_admin(instance_path: str, username: str) -> bool:
+    """Set role='admin' for the given username. Returns True if a row was updated."""
+    conn = sqlite3.connect(_db_path(instance_path))
+    try:
+        cur = conn.execute(
+            "UPDATE users SET role = 'admin' WHERE username = ?",
+            (username,),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
