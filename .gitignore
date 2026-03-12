@@ -20,10 +20,23 @@ env/
 model/*.pkl
 model/*.joblib
 model/*.h5
+models/*.pkl
+models/*.joblib
+models/*.h5
+models/thresholds.json
+
+# Generated evaluation outputs (produced at runtime)
+data/processed/*.parquet
+data/processed/*.csv
+reports/*.png
+reports/*.csv
+metrics.csv
 
 # Jupyter / EDA
 .ipynb_checkpoints/
+# Allow notebooks in the notebooks/ directory but ignore ad-hoc scratch notebooks
 *.ipynb
+!notebooks/*.ipynb
 
 # Test / coverage artifacts
 .pytest_cache/
