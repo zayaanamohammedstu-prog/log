@@ -56,9 +56,15 @@
     <div class="admin-forbidden">
       <div class="forbidden-icon">🔒</div>
       <h2>Access Denied</h2>
-      <p>This page is restricted to <strong>admin</strong> users only.</p>
+      {% if forbidden_page == "auditor" %}
+      <p>The <strong>Auditor Portal</strong> is restricted to auditor-role users.</p>
+      <p>As an administrator, your portal is the <a href="{{ url_for('admin') }}">Admin Portal</a>.</p>
+      <a href="{{ url_for('admin') }}" class="btn btn-primary" style="margin-top:16px;">Go to Admin Portal</a>
+      {% else %}
+      <p>The <strong>Admin Portal</strong> is restricted to admin-role users.</p>
       <p>Your current role: <span class="user-role role-{{ user.role }}">{{ user.role }}</span></p>
-      <a href="{{ url_for('admin') if user.is_admin else url_for('auditor') }}" class="btn btn-primary" style="margin-top:16px;">Back to Dashboard</a>
+      <a href="{{ url_for('auditor') }}" class="btn btn-primary" style="margin-top:16px;">Go to Auditor Portal</a>
+      {% endif %}
     </div>
 
     {% else %}
