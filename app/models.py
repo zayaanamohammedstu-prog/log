@@ -24,4 +24,4 @@ class User(UserMixin):
 
     @property
     def is_admin(self) -> bool:
-        return self.role == "admin"
+        return (self.role or "").strip().lower() == "admin"

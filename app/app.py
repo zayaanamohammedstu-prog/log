@@ -476,7 +476,9 @@ def main():
 def auditor():
     """Auditor-only workbench portal. Admins are denied access (403)."""
     if current_user.is_admin:
-        return render_template("admin.html", forbidden=True, user=current_user), 403
+        return render_template(
+            "admin.html", forbidden=True, forbidden_page="auditor", user=current_user
+        ), 403
     return render_template("index.html", user=current_user)
 
 
@@ -519,7 +521,9 @@ def logout():
 @login_required
 def admin():
     if not current_user.is_admin:
-        return render_template("admin.html", forbidden=True, user=current_user), 403
+        return render_template(
+            "admin.html", forbidden=True, forbidden_page="admin", user=current_user
+        ), 403
     user_count = count_users(app.instance_path)
     return render_template(
         "admin.html",

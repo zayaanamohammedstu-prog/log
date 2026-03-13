@@ -459,3 +459,79 @@ class TestAdminRecovery:
         assert count_admins(tmp_instance) == 1
         create_user(tmp_instance, "auditor2", "pass", role="auditor")
         assert count_admins(tmp_instance) == 1
+
+
+# ---------------------------------------------------------------------------
+# Role normalisation tests
+# ---------------------------------------------------------------------------
+
+class TestRoleNormalisation:
+    """Ensure roles are stored normalised and comparisons are robust."""
+
+    def test_create_user_lowercases_role(self, tmp_instance):
+        """create_user normalises an uppercase role to lowercase."""
+        from app.db import get_user_by_username
+        create_user(tmp_instance, "upperadmin", "pass", role="Admin")
+        row = get_user_by_username(tmp_instance, "upperadmin")
+        assert row["role"] == "admin"
+
+    def test_create_user_strips_role_whitespace(self, tmp_instance):
+        """create_user strips leading/trailing whitespace from role."""
+        from app.db import get_user_by_username
+        create_user(tmp_instance, "spaceauditor", "pass", role=" auditor ")
+        row = get_user_by_username(tmp_instance, "spaceauditor")
+        assert row["role"] == "auditor"
+
+    def test_create_user_normalises_mixed_case_auditor(self, tmp_instance):
+        """create_user stores 'AUDITOR' as 'auditor'."""
+        from app.db import get_user_by_username
+        create_user(tmp_instance, "capsauditor", "pass", role="AUDITOR")
+        row = get_user_by_username(tmp_instance, "capsauditor")
+        assert row["role"] == "auditor"
+
+    def test_admin_with_uppercase_role_redirected_to_admin_portal(self, tmp_instance, client):
+        """Admin user created with 'Admin' role is redirected to /admin on login, not /auditor."""
+        create_user(tmp_instance, "mixedadmin", "pass", role="Admin")
+        resp = client.post(
+            "/login",
+            data={"username": "mixedadmin", "password": "pass"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert "/admin" in resp.headers["Location"]
+
+    def test_admin_login_redirect_yields_200_not_403(self, tmp_instance, client):
+        """Following the login redirect for an admin user gives HTTP 200, not 403."""
+        create_user(tmp_instance, "adminok", "pass", role="admin")
+        resp = client.post(
+            "/login",
+            data={"username": "adminok", "password": "pass"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"Administration" in resp.data
+
+    def test_auditor_login_redirect_yields_200_not_403(self, tmp_instance, client):
+        """Following the login redirect for an auditor user gives HTTP 200, not 403."""
+        create_user(tmp_instance, "auditorok", "pass", role="auditor")
+        resp = client.post(
+            "/login",
+            data={"username": "auditorok", "password": "pass"},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+        assert b"LogGuard" in resp.data
+
+    def test_admin_forbidden_from_auditor_portal_with_role_hint(self, admin_client):
+        """When admin is denied /auditor, the 403 page mentions the Admin Portal."""
+        resp = admin_client.get("/auditor")
+        assert resp.status_code == 403
+        assert b"Access Denied" in resp.data
+        assert b"Admin Portal" in resp.data
+
+    def test_auditor_forbidden_from_admin_portal_with_role_hint(self, auditor_client):
+        """When auditor is denied /admin, the 403 page mentions the Auditor Portal."""
+        resp = auditor_client.get("/admin")
+        assert resp.status_code == 403
+        assert b"Access Denied" in resp.data
+        assert b"Auditor Portal" in resp.data
