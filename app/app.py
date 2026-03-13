@@ -474,8 +474,8 @@ def main():
 @app.route("/auditor")
 @login_required
 def auditor():
-    """Auditor-only workbench portal. Admins are denied access (403)."""
-    if current_user.is_admin:
+    """Auditor workbench portal. Accessible to auditor, admin, and administrator roles."""
+    if not current_user.can_access_auditor_portal:
         return render_template(
             "admin.html", forbidden=True, forbidden_page="auditor", user=current_user
         ), 403
@@ -858,8 +858,8 @@ def api_admin_create_user():
     role = (payload.get("role") or "auditor").strip()
     if not username or not password:
         return jsonify({"error": "username and password are required."}), 400
-    if role not in ("admin", "auditor"):
-        return jsonify({"error": "role must be 'admin' or 'auditor'."}), 400
+    if role not in ("admin", "auditor", "administrator"):
+        return jsonify({"error": "role must be 'admin', 'administrator', or 'auditor'."}), 400
     existing = get_user_by_username(app.instance_path, username)
     if existing:
         return jsonify({"error": f"Username '{username}' already exists."}), 409
