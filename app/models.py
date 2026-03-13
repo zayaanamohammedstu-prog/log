@@ -24,4 +24,14 @@ class User(UserMixin):
 
     @property
     def is_admin(self) -> bool:
-        return (self.role or "").strip().lower() == "admin"
+        """Return True for users with admin or administrator role."""
+        return (self.role or "").strip().lower() in ("admin", "administrator")
+
+    @property
+    def can_access_auditor_portal(self) -> bool:
+        """Return True for roles that may access the Auditor Portal.
+
+        Admins imply auditor privileges, so both 'admin'/'administrator'
+        and 'auditor' are permitted.
+        """
+        return (self.role or "").strip().lower() in ("auditor", "admin", "administrator")

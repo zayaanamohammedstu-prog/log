@@ -110,7 +110,7 @@ def create_user(
     """Hash *password* and insert a new user row. Returns the new row id."""
     # Normalise role: strip whitespace and lowercase to prevent mismatch bugs
     role = (role or "auditor").strip().lower()
-    if role not in ("admin", "auditor"):
+    if role not in ("admin", "auditor", "administrator"):
         role = "auditor"
     hashed = generate_password_hash(password)
     conn = sqlite3.connect(_db_path(instance_path))

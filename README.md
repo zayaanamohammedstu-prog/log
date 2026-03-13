@@ -145,7 +145,7 @@ in step 2.
 
 - The SQLite database (`logguard.db`) is stored in Flask's `instance/` folder and is excluded from version control.
 - Passwords are never stored in plaintext — Werkzeug's `pbkdf2:sha256` is used.
-- Roles: `admin`, `auditor`, `viewer`. The `/admin` page is restricted to `admin` role only.
+- Roles: `admin`, `administrator`, `auditor`. Both `admin` and `administrator` have full admin privileges and can access both the Admin Portal and the Auditor Portal. The `/admin` page and user-management API endpoints are restricted to `admin`/`administrator` roles only.
 
 ---
 

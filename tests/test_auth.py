@@ -166,11 +166,11 @@ class TestProtectedRoutes:
         assert resp.status_code == 200
         assert b"LogGuard" in resp.data
 
-    def test_auditor_forbidden_for_admin(self, admin_client):
-        """Admin user accessing /auditor gets 403."""
+    def test_auditor_accessible_for_admin(self, admin_client):
+        """Admin user can access /auditor (admin implies auditor privileges)."""
         resp = admin_client.get("/auditor")
-        assert resp.status_code == 403
-        assert b"Access Denied" in resp.data
+        assert resp.status_code == 200
+        assert b"LogGuard" in resp.data
 
     def test_api_status_requires_auth(self, client):
         resp = client.get("/api/status")
@@ -522,12 +522,11 @@ class TestRoleNormalisation:
         assert resp.status_code == 200
         assert b"LogGuard" in resp.data
 
-    def test_admin_forbidden_from_auditor_portal_with_role_hint(self, admin_client):
-        """When admin is denied /auditor, the 403 page mentions the Admin Portal."""
+    def test_admin_can_access_auditor_portal(self, admin_client):
+        """Admin is allowed into /auditor (admin implies auditor privileges)."""
         resp = admin_client.get("/auditor")
-        assert resp.status_code == 403
-        assert b"Access Denied" in resp.data
-        assert b"Admin Portal" in resp.data
+        assert resp.status_code == 200
+        assert b"LogGuard" in resp.data
 
     def test_auditor_forbidden_from_admin_portal_with_role_hint(self, auditor_client):
         """When auditor is denied /admin, the 403 page mentions the Auditor Portal."""
@@ -535,3 +534,81 @@ class TestRoleNormalisation:
         assert resp.status_code == 403
         assert b"Access Denied" in resp.data
         assert b"Auditor Portal" in resp.data
+
+
+# ---------------------------------------------------------------------------
+# Administrator role tests
+# ---------------------------------------------------------------------------
+
+class TestAdministratorRole:
+    """Ensure users with 'administrator' role have admin-equivalent access."""
+
+    @pytest.fixture
+    def administrator_client(self, tmp_instance, client):
+        """Logged-in test client with an administrator-role user."""
+        from app.db import create_user
+        create_user(tmp_instance, "testadministrator", "adminpass", role="administrator")
+        client.post(
+            "/login",
+            data={"username": "testadministrator", "password": "adminpass"},
+            follow_redirects=True,
+        )
+        return client
+
+    def test_administrator_is_admin(self, tmp_instance):
+        """User with 'administrator' role has is_admin == True."""
+        from app.db import get_user_by_username, create_user
+        from app.models import User
+        create_user(tmp_instance, "adm", "pass", role="administrator")
+        row = get_user_by_username(tmp_instance, "adm")
+        user = User(row)
+        assert user.is_admin is True
+
+    def test_administrator_can_access_auditor_portal(self, administrator_client):
+        """Administrator can access /auditor (admin implies auditor privileges)."""
+        resp = administrator_client.get("/auditor")
+        assert resp.status_code == 200
+        assert b"LogGuard" in resp.data
+
+    def test_administrator_can_access_admin_portal(self, administrator_client):
+        """Administrator can access /admin."""
+        resp = administrator_client.get("/admin")
+        assert resp.status_code == 200
+        assert b"Administration" in resp.data
+
+    def test_administrator_can_list_users(self, administrator_client):
+        """Administrator can call the admin user-list API."""
+        resp = administrator_client.get("/api/admin/users")
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert "users" in data
+
+    def test_administrator_can_create_user(self, administrator_client):
+        """Administrator can create users via the admin API."""
+        resp = administrator_client.post(
+            "/api/admin/users",
+            data=json.dumps({"username": "newauditor", "password": "pass123", "role": "auditor"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 201
+        data = json.loads(resp.data)
+        assert data["username"] == "newauditor"
+
+    def test_administrator_login_redirects_to_admin_portal(self, tmp_instance, client):
+        """Administrator role is redirected to /admin on login."""
+        from app.db import create_user
+        create_user(tmp_instance, "adm2", "pass", role="administrator")
+        resp = client.post(
+            "/login",
+            data={"username": "adm2", "password": "pass"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert "/admin" in resp.headers["Location"]
+
+    def test_administrator_can_access_admin_stats(self, administrator_client):
+        """Administrator can view admin stats API."""
+        resp = administrator_client.get("/api/admin/stats")
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert "user_count" in data
