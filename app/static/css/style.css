@@ -1019,3 +1019,154 @@ td.placeholder { text-align: center; color: var(--text-muted); padding: 40px; }
   .heatmap-grid, .heatmap-labels { min-width: 480px; }
 }
 
+/* ============================================================
+   SHARE SECTION — share-grid cards
+   ============================================================ */
+.share-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.share-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition), border-color var(--transition);
+}
+.share-card:hover {
+  box-shadow: var(--shadow);
+  border-color: var(--accent);
+}
+
+.share-card-icon {
+  font-size: 2rem;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.share-icon-pdf   { background: rgba(248,81,73,.12); }
+.share-icon-email { background: rgba(88,166,255,.12); }
+.share-icon-wa    { background: rgba(63,185,80,.12);  }
+
+.share-card-body h4 {
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.share-card-body p {
+  font-size: .82rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ============================================================
+   SEND REPORT MODAL (centered dialog)
+   ============================================================ */
+.send-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition);
+}
+.send-modal-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.send-modal {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 440px;
+  box-shadow: var(--shadow);
+  transform: translateY(-16px) scale(.97);
+  transition: transform var(--transition);
+}
+.send-modal-overlay.open .send-modal {
+  transform: translateY(0) scale(1);
+}
+
+.send-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.send-modal-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.send-modal-body {
+  padding: 20px;
+}
+.send-modal-desc {
+  font-size: .85rem;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+
+.send-modal-body .form-group { margin-bottom: 0; }
+.send-modal-body label {
+  display: block;
+  font-size: .82rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+.send-modal-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: .9rem;
+  transition: border-color var(--transition);
+}
+.send-modal-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.send-modal-status {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: .83rem;
+  line-height: 1.4;
+}
+.send-modal-status.status-ok    { background: rgba(63,185,80,.12);  border: 1px solid rgba(63,185,80,.3);   color: var(--success); }
+.send-modal-status.status-error { background: rgba(248,81,73,.12);  border: 1px solid rgba(248,81,73,.3);  color: var(--danger);  }
+.send-modal-status.status-info  { background: rgba(88,166,255,.10); border: 1px solid rgba(88,166,255,.25); color: var(--accent);  }
+
+.send-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--border);
+}
+
+

@@ -21,6 +21,9 @@ GET  /api/runs/<run_id>/ips/<ip>/timeline     → IP activity timeline
 GET  /api/runs/<run_id>/chains                → List attack chains
 GET  /api/runs/<run_id>/chains/<chain_id>     → Single chain detail
 GET  /api/runs/<run_id>/report                → HTML report
+GET  /api/runs/<run_id>/report/pdf            → PDF report download
+POST /api/runs/<run_id>/send/email            → Send PDF report via email
+POST /api/runs/<run_id>/send/whatsapp         → Send PDF report via WhatsApp
 GET  /api/audit/verify                        → Verify ledger (admin)
 GET  /api/audit/entries                       → List ledger entries (admin)
 """
@@ -790,6 +793,90 @@ def api_run_report(run_id: int):
             "Content-Disposition": f'inline; filename="report_run_{run_id}.html"'
         },
     )
+
+
+@app.route("/api/runs/<int:run_id>/report/pdf")
+@login_required
+def api_run_report_pdf(run_id: int):
+    """Generate and return a PDF report for a run."""
+    run = get_run(app.instance_path, run_id)
+    if run is None:
+        return jsonify({"error": "Run not found."}), 404
+    results = get_run_results(app.instance_path, run_id)
+    chains = get_chains(app.instance_path, run_id)
+    try:
+        from reporting import generate_pdf_report  # noqa: E402
+        pdf_bytes = generate_pdf_report(run, results, chains)
+    except ImportError:
+        return jsonify({"error": "PDF generation requires the 'fpdf2' package."}), 500
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="logguard_report_run_{run_id}.pdf"'
+        },
+    )
+
+
+@app.route("/api/runs/<int:run_id>/send/email", methods=["POST"])
+@login_required
+def api_send_email(run_id: int):
+    """Send a PDF report to an email address."""
+    run = get_run(app.instance_path, run_id)
+    if run is None:
+        return jsonify({"error": "Run not found."}), 404
+
+    data = request.get_json(silent=True) or {}
+    to_address = (data.get("to") or "").strip()
+    if not to_address:
+        return jsonify({"error": "Recipient email address ('to') is required."}), 400
+
+    results = get_run_results(app.instance_path, run_id)
+    chains = get_chains(app.instance_path, run_id)
+    try:
+        from reporting import generate_pdf_report  # noqa: E402
+        pdf_bytes = generate_pdf_report(run, results, chains)
+    except ImportError:
+        return jsonify({"error": "PDF generation requires the 'fpdf2' package."}), 500
+
+    try:
+        from mailer import send_report_email, MailerError  # noqa: E402
+        send_report_email(to_address, run_id, pdf_bytes)
+    except MailerError as exc:
+        app.logger.warning("Email send failed for run %s: %s", run_id, exc)
+        # exc.args[0] is the controlled message we set in MailerError.__init__
+        error_msg = exc.args[0] if exc.args else "Failed to send email."
+        return jsonify({"error": error_msg}), 500
+
+    return jsonify({"ok": True, "message": f"Report sent to {to_address}."})
+
+
+@app.route("/api/runs/<int:run_id>/send/whatsapp", methods=["POST"])
+@login_required
+def api_send_whatsapp(run_id: int):
+    """Send a PDF report to a WhatsApp number via Twilio."""
+    run = get_run(app.instance_path, run_id)
+    if run is None:
+        return jsonify({"error": "Run not found."}), 404
+
+    data = request.get_json(silent=True) or {}
+    to_number = (data.get("to") or "").strip()
+    if not to_number:
+        return jsonify({"error": "Recipient phone number ('to') is required."}), 400
+
+    # Build a public URL for Twilio to fetch the PDF
+    public_base = os.environ.get("LOGGUARD_PUBLIC_URL", request.host_url.rstrip("/"))
+    pdf_url = f"{public_base}/api/runs/{run_id}/report/pdf"
+
+    try:
+        from whatsapp_sender import send_report_whatsapp, WhatsAppSenderError  # noqa: E402
+        send_report_whatsapp(to_number, run_id, pdf_url)
+    except WhatsAppSenderError as exc:
+        app.logger.warning("WhatsApp send failed for run %s: %s", run_id, exc)
+        error_msg = exc.args[0] if exc.args else "Failed to send WhatsApp message."
+        return jsonify({"error": error_msg}), 500
+
+    return jsonify({"ok": True, "message": f"Report sent to {to_number} via WhatsApp."})
 
 
 # ---------------------------------------------------------------------------
