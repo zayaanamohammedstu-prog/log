@@ -422,6 +422,44 @@
         </div>
       </div>
 
+      <!-- ── Share / Send section ─────────────────────────────────────────── -->
+      <div>
+        <div class="section-title">📨 Share Report</div>
+        <p class="section-desc">
+          Download the report as a PDF or send it directly to colleagues via email or WhatsApp.
+        </p>
+        <div class="share-grid">
+
+          <div class="share-card">
+            <div class="share-card-icon share-icon-pdf">📥</div>
+            <div class="share-card-body">
+              <h4>Download PDF Report</h4>
+              <p>Generate and download a full audit report in PDF format, ready for printing or attaching to audit workpapers.</p>
+            </div>
+            <button class="btn btn-danger" id="btnDownloadPdf">📥 Download PDF</button>
+          </div>
+
+          <div class="share-card">
+            <div class="share-card-icon share-icon-email">✉️</div>
+            <div class="share-card-body">
+              <h4>Send via Email</h4>
+              <p>Send the PDF report to any email address. Requires SMTP configuration on the server (see README).</p>
+            </div>
+            <button class="btn btn-primary" id="btnSendEmail">✉️ Send via Email</button>
+          </div>
+
+          <div class="share-card">
+            <div class="share-card-icon share-icon-wa">💬</div>
+            <div class="share-card-body">
+              <h4>Send via WhatsApp</h4>
+              <p>Send the PDF report to a WhatsApp number using the Twilio API. Requires Twilio credentials on the server (see README).</p>
+            </div>
+            <button class="btn btn-success" id="btnSendWhatsapp">💬 Send via WhatsApp</button>
+          </div>
+
+        </div>
+      </div>
+
       <!-- Advanced visualisations -->
       <div>
         <div class="section-title">📈 Advanced Analytics</div>
@@ -658,6 +696,28 @@
 
 <!-- Toast container -->
 <div class="toast-container" id="toastContainer"></div>
+
+<!-- =================== SEND REPORT MODAL =================== -->
+<div class="send-modal-overlay" id="sendModalOverlay" role="dialog" aria-modal="true" aria-labelledby="sendModalTitle">
+  <div class="send-modal">
+    <div class="send-modal-header">
+      <span class="send-modal-title" id="sendModalTitle">Send Report</span>
+      <button class="drill-close-btn" id="sendModalClose" aria-label="Close">✕</button>
+    </div>
+    <div class="send-modal-body">
+      <p id="sendModalDesc" class="send-modal-desc"></p>
+      <div class="form-group">
+        <label for="sendModalRecipient" id="sendModalLabel">Recipient</label>
+        <input type="text" id="sendModalRecipient" class="send-modal-input" placeholder="" autocomplete="off" />
+      </div>
+      <div id="sendModalStatus" class="send-modal-status hidden"></div>
+    </div>
+    <div class="send-modal-footer">
+      <button class="btn btn-secondary" id="sendModalCancel">Cancel</button>
+      <button class="btn btn-primary" id="sendModalSubmit">Send</button>
+    </div>
+  </div>
+</div>
 
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>

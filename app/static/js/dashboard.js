@@ -1500,6 +1500,28 @@ document.addEventListener("DOMContentLoaded", async () => {
     showToast("HTML report download started.", "success");
   });
 
+  // PDF Report download
+  document.getElementById("btnDownloadPdf")?.addEventListener("click", () => {
+    if (!_lastRunId) { showToast("Run an analysis first to generate a report.", "error"); return; }
+    const a = document.createElement("a");
+    a.href = `/api/runs/${_lastRunId}/report/pdf`;
+    a.download = `logguard_report_run_${_lastRunId}.pdf`;
+    a.click();
+    showToast("PDF report download started.", "success");
+  });
+
+  // Send via Email button
+  document.getElementById("btnSendEmail")?.addEventListener("click", () => {
+    if (!_lastRunId) { showToast("Run an analysis first to generate a report.", "error"); return; }
+    openSendModal("email");
+  });
+
+  // Send via WhatsApp button
+  document.getElementById("btnSendWhatsapp")?.addEventListener("click", () => {
+    if (!_lastRunId) { showToast("Run an analysis first to generate a report.", "error"); return; }
+    openSendModal("whatsapp");
+  });
+
   // History tab
   document.getElementById("btnRefreshHistory")?.addEventListener("click", loadRunHistory);
 
@@ -1527,7 +1549,25 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("drillOverlay")?.addEventListener("click", e => {
     if (e.target === document.getElementById("drillOverlay")) closeDrillDown();
   });
-  document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrillDown(); });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      if (document.getElementById("sendModalOverlay")?.classList.contains("open")) {
+        closeSendModal();
+      } else {
+        closeDrillDown();
+      }
+    }
+  });
+
+  // Send modal close / cancel
+  document.getElementById("sendModalClose")?.addEventListener("click", closeSendModal);
+  document.getElementById("sendModalCancel")?.addEventListener("click", closeSendModal);
+  document.getElementById("sendModalOverlay")?.addEventListener("click", e => {
+    if (e.target === document.getElementById("sendModalOverlay")) closeSendModal();
+  });
+
+  // Send modal submit
+  document.getElementById("sendModalSubmit")?.addEventListener("click", submitSendModal);
 
   // Auto-load if results exist
   try {
@@ -1539,4 +1579,102 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   } catch (_) { /* not ready */ }
 });
+
+// ============================================================
+// SEND MODAL
+// ============================================================
+let _sendModalMode = ""; // "email" or "whatsapp"
+
+function openSendModal(mode) {
+  _sendModalMode = mode;
+  const overlay   = document.getElementById("sendModalOverlay");
+  const title     = document.getElementById("sendModalTitle");
+  const desc      = document.getElementById("sendModalDesc");
+  const label     = document.getElementById("sendModalLabel");
+  const input     = document.getElementById("sendModalRecipient");
+  const status    = document.getElementById("sendModalStatus");
+  const submitBtn = document.getElementById("sendModalSubmit");
+
+  if (!overlay) return;
+
+  if (mode === "email") {
+    title.textContent = "✉️ Send Report via Email";
+    desc.textContent  = "Enter the recipient's email address. The PDF report will be attached and sent from the configured SMTP server.";
+    label.textContent = "Recipient email address";
+    input.type        = "email";
+    input.placeholder = "colleague@example.com";
+    submitBtn.className = "btn btn-primary";
+    submitBtn.textContent = "Send Email";
+  } else {
+    title.textContent = "💬 Send Report via WhatsApp";
+    desc.textContent  = "Enter the recipient's phone number in international format (e.g. +447911123456). The PDF will be sent via the Twilio WhatsApp API.";
+    label.textContent = "Recipient WhatsApp number (E.164 format)";
+    input.type        = "tel";
+    input.placeholder = "+447911123456";
+    submitBtn.className = "btn btn-success";
+    submitBtn.textContent = "Send WhatsApp";
+  }
+
+  input.value = "";
+  status.textContent = "";
+  status.className = "send-modal-status hidden";
+  overlay.classList.add("open");
+  setTimeout(() => input.focus(), 120);
+}
+
+function closeSendModal() {
+  const overlay = document.getElementById("sendModalOverlay");
+  if (overlay) overlay.classList.remove("open");
+}
+
+async function submitSendModal() {
+  const input     = document.getElementById("sendModalRecipient");
+  const status    = document.getElementById("sendModalStatus");
+  const submitBtn = document.getElementById("sendModalSubmit");
+  if (!input || !status) return;
+
+  const recipient = input.value.trim();
+  if (!recipient) {
+    showSendStatus("Please enter a recipient.", "error");
+    return;
+  }
+
+  const endpoint = _sendModalMode === "email"
+    ? `/api/runs/${_lastRunId}/send/email`
+    : `/api/runs/${_lastRunId}/send/whatsapp`;
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Sending…";
+  showSendStatus("Sending, please wait…", "info");
+
+  try {
+    const resp = await apiFetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: recipient }),
+    });
+    const data = resp ? await resp.json() : null;
+    if (resp && resp.ok && data && data.ok) {
+      showSendStatus(`✅ ${data.message}`, "ok");
+      showToast(data.message, "success");
+      setTimeout(closeSendModal, 2400);
+    } else {
+      const msg = data?.error || "Unknown error.";
+      showSendStatus(`❌ ${msg}`, "error");
+    }
+  } catch (err) {
+    showSendStatus(`❌ Network error: ${err.message}`, "error");
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = _sendModalMode === "email" ? "Send Email" : "Send WhatsApp";
+  }
+}
+
+function showSendStatus(message, type) {
+  const el = document.getElementById("sendModalStatus");
+  if (!el) return;
+  el.textContent = message;
+  el.className = `send-modal-status status-${type}`;
+}
+
 

@@ -186,6 +186,9 @@ Response now includes `run_id`, `chains`, and per-row `explanations_json`.
 | `GET` | `/api/runs/<run_id>/chains` | List attack chains for a run |
 | `GET` | `/api/runs/<run_id>/chains/<chain_id>` | Single attack chain detail |
 | `GET` | `/api/runs/<run_id>/report` | Download HTML audit report |
+| `GET` | `/api/runs/<run_id>/report/pdf` | Download PDF audit report |
+| `POST` | `/api/runs/<run_id>/send/email` | Send PDF report via email (JSON body: `{"to": "user@example.com"}`) |
+| `POST` | `/api/runs/<run_id>/send/whatsapp` | Send PDF report via WhatsApp (JSON body: `{"to": "+447911123456"}`) |
 
 ### Audit ledger (admin only)
 
@@ -238,6 +241,43 @@ Click any row in the Anomaly Explorer table to open a drill-down panel showing:
 - Top anomalies table with explanations
 - Attack chains narrative
 - Model settings appendix
+
+### PDF Report & Sharing (PR-SHARE)
+LogGuard can generate a structured PDF report and send it directly to colleagues via email or WhatsApp.
+
+#### PDF download
+`GET /api/runs/<run_id>/report/pdf` generates and downloads a PDF report.
+The **"📥 Download PDF"** button in the *Export & Visualise* tab does this automatically.
+
+#### Send via Email
+`POST /api/runs/<run_id>/send/email` with body `{"to": "recipient@example.com"}` sends the PDF report as an email attachment via SMTP.
+
+Set the following environment variables before starting the server:
+
+```bash
+export LOGGUARD_SMTP_HOST=smtp.gmail.com          # SMTP server hostname
+export LOGGUARD_SMTP_PORT=587                     # SMTP port (default 587)
+export LOGGUARD_SMTP_USER=you@gmail.com           # SMTP username / sender
+export LOGGUARD_SMTP_PASSWORD=your-app-password   # SMTP password or App Password
+export LOGGUARD_SMTP_FROM=you@gmail.com           # From address (defaults to SMTP_USER)
+```
+
+> **Gmail tip:** Use an [App Password](https://support.google.com/accounts/answer/185833) rather than your account password.
+
+#### Send via WhatsApp (Twilio)
+`POST /api/runs/<run_id>/send/whatsapp` with body `{"to": "+447911123456"}` sends the PDF report via the Twilio WhatsApp API.
+
+Set the following environment variables:
+
+```bash
+export TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export TWILIO_AUTH_TOKEN=your_auth_token
+export TWILIO_WHATSAPP_FROM=whatsapp:+14155238886  # Your Twilio sandbox/approved number
+export LOGGUARD_PUBLIC_URL=https://yourapp.example.com  # Public URL Twilio uses to fetch the PDF
+```
+
+> Twilio requires the PDF URL to be publicly accessible. Set `LOGGUARD_PUBLIC_URL` to your server's public base URL.
+> For local development, use a tunnelling tool such as [ngrok](https://ngrok.com/): `ngrok http 5000`.
 
 ### Tamper-Evident Audit Ledger (PR8)
 Every analysis run appends a SHA-256 hash-chain entry to the ledger.
