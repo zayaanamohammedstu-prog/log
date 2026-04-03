@@ -264,28 +264,35 @@ export LOGGUARD_SMTP_FROM=you@gmail.com           # From address (defaults to SM
 
 > **Gmail tip:** Use an [App Password](https://support.google.com/accounts/answer/185833) rather than your account password.
 
-#### Send via WhatsApp (Meta WhatsApp Business Cloud API)
-`POST /api/runs/<run_id>/send/whatsapp` with body `{"to": "+447911123456"}` sends the PDF report via the [Meta WhatsApp Business Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api).
+#### Send via WhatsApp (360dialog WhatsApp Business API)
+`POST /api/runs/<run_id>/send/whatsapp` with body `{"to": "+447911123456"}` sends the PDF report via the [360dialog WhatsApp Business API](https://docs.360dialog.com/).
 
 Set the following environment variables before starting the server:
 
 ```bash
-export WHATSAPP_PHONE_NUMBER_ID=your_phone_number_id   # Phone Number ID from Meta dashboard (WhatsApp > API Setup)
-export WHATSAPP_ACCESS_TOKEN=your_access_token         # Permanent / long-lived access token from Meta dashboard
-export LOGGUARD_PUBLIC_URL=https://yourapp.example.com # Public URL the Cloud API uses to fetch the PDF
+export WHATSAPP_API_KEY=your_360dialog_api_key    # API key from the 360dialog Hub (https://hub.360dialog.com/)
+export LOGGUARD_PUBLIC_URL=https://yourapp.example.com # Public URL the API uses to fetch the PDF
 ```
 
 > **Setup guide:**
-> 1. Create a [Meta Developer](https://developers.facebook.com/) account and add the **WhatsApp** product to your app.
-> 2. Under *WhatsApp > API Setup* copy your **Phone Number ID** and generate a **permanent access token**.
-> 3. Register your recipient numbers in the Meta sandbox (for testing) or obtain a verified WhatsApp Business number for production.
-> 4. The Meta API fetches the PDF directly from `LOGGUARD_PUBLIC_URL`, so the server must be publicly accessible.
+> 1. Sign up for a [360dialog](https://www.360dialog.com) account and create a WhatsApp Business API channel in the [360dialog Hub](https://hub.360dialog.com/).
+> 2. Copy your **API key** from the Hub.
+> 3. Ensure your server is reachable at `LOGGUARD_PUBLIC_URL` so that 360dialog can fetch the PDF attachment.
 >    For local development use a tunnelling tool such as [ngrok](https://ngrok.com/): `ngrok http 5000`.
+> 4. The recipient's WhatsApp number must be registered and reachable; for sandbox/test environments ensure the number is whitelisted in the 360dialog Hub.
 
 **Optional:**
 
 ```bash
-export WHATSAPP_API_VERSION=v19.0  # Graph API version (default: v19.0)
+export WHATSAPP_API_URL=https://waba.360dialog.io/v1/messages  # 360dialog API endpoint (default shown)
+```
+
+**Usage example (curl):**
+
+```bash
+curl -X POST https://yourapp.example.com/api/runs/1/send/whatsapp \
+  -H "Content-Type: application/json" \
+  -d '{"to": "+447911123456"}'
 ```
 
 ### Tamper-Evident Audit Ledger (PR8)
