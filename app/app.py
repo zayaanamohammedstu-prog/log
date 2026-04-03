@@ -854,7 +854,7 @@ def api_send_email(run_id: int):
 @app.route("/api/runs/<int:run_id>/send/whatsapp", methods=["POST"])
 @login_required
 def api_send_whatsapp(run_id: int):
-    """Send a PDF report to a WhatsApp number via Twilio."""
+    """Send a PDF report to a WhatsApp number via the Meta WhatsApp Cloud API."""
     run = get_run(app.instance_path, run_id)
     if run is None:
         return jsonify({"error": "Run not found."}), 404
@@ -864,7 +864,7 @@ def api_send_whatsapp(run_id: int):
     if not to_number:
         return jsonify({"error": "Recipient phone number ('to') is required."}), 400
 
-    # Build a public URL for Twilio to fetch the PDF
+    # Build a public URL for the Meta Cloud API to fetch the PDF
     public_base = os.environ.get("LOGGUARD_PUBLIC_URL", request.host_url.rstrip("/"))
     pdf_url = f"{public_base}/api/runs/{run_id}/report/pdf"
 

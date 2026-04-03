@@ -264,20 +264,29 @@ export LOGGUARD_SMTP_FROM=you@gmail.com           # From address (defaults to SM
 
 > **Gmail tip:** Use an [App Password](https://support.google.com/accounts/answer/185833) rather than your account password.
 
-#### Send via WhatsApp (Twilio)
-`POST /api/runs/<run_id>/send/whatsapp` with body `{"to": "+447911123456"}` sends the PDF report via the Twilio WhatsApp API.
+#### Send via WhatsApp (Meta WhatsApp Business Cloud API)
+`POST /api/runs/<run_id>/send/whatsapp` with body `{"to": "+447911123456"}` sends the PDF report via the [Meta WhatsApp Business Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api).
 
-Set the following environment variables:
+Set the following environment variables before starting the server:
 
 ```bash
-export TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-export TWILIO_AUTH_TOKEN=your_auth_token
-export TWILIO_WHATSAPP_FROM=whatsapp:+14155238886  # Your Twilio sandbox/approved number
-export LOGGUARD_PUBLIC_URL=https://yourapp.example.com  # Public URL Twilio uses to fetch the PDF
+export WHATSAPP_PHONE_NUMBER_ID=your_phone_number_id   # Phone Number ID from Meta dashboard (WhatsApp > API Setup)
+export WHATSAPP_ACCESS_TOKEN=your_access_token         # Permanent / long-lived access token from Meta dashboard
+export LOGGUARD_PUBLIC_URL=https://yourapp.example.com # Public URL the Cloud API uses to fetch the PDF
 ```
 
-> Twilio requires the PDF URL to be publicly accessible. Set `LOGGUARD_PUBLIC_URL` to your server's public base URL.
-> For local development, use a tunnelling tool such as [ngrok](https://ngrok.com/): `ngrok http 5000`.
+> **Setup guide:**
+> 1. Create a [Meta Developer](https://developers.facebook.com/) account and add the **WhatsApp** product to your app.
+> 2. Under *WhatsApp > API Setup* copy your **Phone Number ID** and generate a **permanent access token**.
+> 3. Register your recipient numbers in the Meta sandbox (for testing) or obtain a verified WhatsApp Business number for production.
+> 4. The Meta API fetches the PDF directly from `LOGGUARD_PUBLIC_URL`, so the server must be publicly accessible.
+>    For local development use a tunnelling tool such as [ngrok](https://ngrok.com/): `ngrok http 5000`.
+
+**Optional:**
+
+```bash
+export WHATSAPP_API_VERSION=v19.0  # Graph API version (default: v19.0)
+```
 
 ### Tamper-Evident Audit Ledger (PR8)
 Every analysis run appends a SHA-256 hash-chain entry to the ledger.

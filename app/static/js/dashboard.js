@@ -1607,7 +1607,7 @@ function openSendModal(mode) {
     submitBtn.textContent = "Send Email";
   } else {
     title.textContent = "💬 Send Report via WhatsApp";
-    desc.textContent  = "Enter the recipient's phone number in international format (e.g. +447911123456). The PDF will be sent via the Twilio WhatsApp API.";
+    desc.textContent  = "Enter the recipient's phone number in international format (e.g. +447911123456). The PDF will be sent via the Meta WhatsApp Business Cloud API.";
     label.textContent = "Recipient WhatsApp number (E.164 format)";
     input.type        = "tel";
     input.placeholder = "+447911123456";
