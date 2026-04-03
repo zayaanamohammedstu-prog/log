@@ -1,29 +1,36 @@
 """
 app/whatsapp_sender.py
 ----------------------
-Send a report PDF via the Twilio WhatsApp API.
+Send a report PDF via the Meta WhatsApp Business Cloud API.
 
-The PDF is first uploaded as a publicly accessible URL — however, Twilio's
-WhatsApp sandbox and approved templates allow sending MMS attachments via
-``media_url``.  Because this application serves the PDF itself, the function
-builds a fully-qualified URL from the Flask request context and passes it to
-Twilio, which fetches and forwards it to WhatsApp.
+The PDF is shared as a publicly accessible URL which is passed to the
+WhatsApp Cloud API as a document link attachment.  Because this application
+serves the PDF itself, the function builds a fully-qualified URL from the
+Flask request context and passes it to the API.
 
 Required environment variables
 -------------------------------
-TWILIO_ACCOUNT_SID     Twilio Account SID
-TWILIO_AUTH_TOKEN      Twilio Auth Token
-TWILIO_WHATSAPP_FROM   Twilio sandbox / approved sender number in E.164 format,
-                       prefixed with ``whatsapp:``
-                       Example: whatsapp:+14155238886
-LOGGUARD_PUBLIC_URL    Base URL of this application reachable by Twilio
-                       (e.g. https://yourapp.example.com).  Required so Twilio
-                       can fetch the PDF attachment.
+WHATSAPP_PHONE_NUMBER_ID   Phone Number ID from the Meta developer dashboard
+                           (found under WhatsApp > API Setup).
+WHATSAPP_ACCESS_TOKEN      Permanent (or long-lived) access token from the
+                           Meta developer dashboard.
+LOGGUARD_PUBLIC_URL        Base URL of this application reachable by Meta
+                           (e.g. https://yourapp.example.com).  Required so
+                           the Cloud API can fetch the PDF attachment.
+
+Optional environment variables
+-------------------------------
+WHATSAPP_API_VERSION       Graph API version to use (default: v19.0).
 """
 
 from __future__ import annotations
 
 import os
+
+import requests
+
+_DEFAULT_API_VERSION = "v19.0"
+_GRAPH_API_BASE = "https://graph.facebook.com"
 
 
 class WhatsAppSenderError(Exception):
@@ -37,67 +44,83 @@ def send_report_whatsapp(
     *,
     body: str | None = None,
 ) -> None:
-    """Send a WhatsApp message with a link to the PDF report.
+    """Send a WhatsApp message with a PDF report link via the Meta Cloud API.
 
     Parameters
     ----------
     to_number:
         Recipient phone number in E.164 format, e.g. ``+447911123456``.
-        The ``whatsapp:`` prefix is added automatically if absent.
+        The leading ``+`` is stripped automatically as the Cloud API expects
+        digits only (e.g. ``447911123456``).
     run_id:
-        Numeric run identifier (used in the default message body).
+        Numeric run identifier (used in the document caption).
     pdf_url:
-        Publicly accessible URL of the PDF file; passed to Twilio as
-        ``media_url`` so it is forwarded as a media attachment.
+        Publicly accessible URL of the PDF file; sent as a document link
+        attachment via the WhatsApp Cloud API.
     body:
-        Optional override for the WhatsApp message text.
+        Optional override for the document caption text.
 
     Raises
     ------
     WhatsAppSenderError
-        When Twilio credentials are missing, the number is invalid, or the
-        API call fails.
+        When credentials are missing, the number is invalid, or the API
+        call fails.
     """
-    account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
-    auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
-    from_number = os.environ.get("TWILIO_WHATSAPP_FROM", "").strip()
+    phone_number_id = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+    access_token = os.environ.get("WHATSAPP_ACCESS_TOKEN", "").strip()
 
-    if not account_sid or not auth_token or not from_number:
+    if not phone_number_id or not access_token:
         raise WhatsAppSenderError(
-            "WhatsApp is not configured. Set TWILIO_ACCOUNT_SID, "
-            "TWILIO_AUTH_TOKEN, and TWILIO_WHATSAPP_FROM environment variables."
+            "WhatsApp is not configured. Set WHATSAPP_PHONE_NUMBER_ID and "
+            "WHATSAPP_ACCESS_TOKEN environment variables."
         )
 
-    # Normalise numbers to whatsapp: prefix
-    if not to_number.startswith("whatsapp:"):
-        to_number = f"whatsapp:{to_number}"
-    if not from_number.startswith("whatsapp:"):
-        from_number = f"whatsapp:{from_number}"
+    # The Cloud API requires the recipient number in E.164 digits-only form
+    # (no leading + sign, no spaces or dashes).
+    recipient = to_number.lstrip("+").replace(" ", "").replace("-", "")
+    if not recipient.isdigit():
+        raise WhatsAppSenderError(
+            f"Invalid recipient phone number: '{to_number}'. "
+            "Provide the number in E.164 format, e.g. +447911123456."
+        )
 
-    body = body or (
+    caption = body or (
         f"LogGuard Anomaly Detection Report — Run #{run_id}\n"
         "Please find the attached PDF report generated by LogGuard."
     )
 
-    try:
-        from twilio.rest import Client  # imported lazily so the app starts without twilio
-        from twilio.base.exceptions import TwilioRestException
-    except ImportError as exc:
-        raise WhatsAppSenderError(
-            "The 'twilio' package is required to send WhatsApp messages. "
-            "Install it with: pip install twilio"
-        ) from exc
+    api_version = os.environ.get("WHATSAPP_API_VERSION", _DEFAULT_API_VERSION).strip()
+    url = f"{_GRAPH_API_BASE}/{api_version}/{phone_number_id}/messages"
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": recipient,
+        "type": "document",
+        "document": {
+            "link": pdf_url,
+            "caption": caption,
+            "filename": f"logguard_report_run_{run_id}.pdf",
+        },
+    }
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
 
     try:
-        client = Client(account_sid, auth_token)
-        client.messages.create(
-            body=body,
-            from_=from_number,
-            to=to_number,
-            media_url=[pdf_url],
-        )
-    except TwilioRestException:  # type: ignore[possibly-undefined]
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+    except requests.RequestException as exc:
         raise WhatsAppSenderError(
-            "Failed to send WhatsApp message via Twilio. "
-            "Check your Twilio credentials and that the recipient number is valid."
-        ) from None
+            "Network error while contacting the WhatsApp Cloud API. "
+            f"Details: {exc}"
+        ) from exc
+
+    if not response.ok:
+        try:
+            detail = response.json().get("error", {}).get("message", response.text)
+        except ValueError:
+            detail = response.text
+        raise WhatsAppSenderError(
+            f"WhatsApp Cloud API returned HTTP {response.status_code}: {detail}"
+        )
