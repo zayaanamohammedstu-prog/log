@@ -1,7 +1,7 @@
 """
 tests/test_whatsapp_sender.py
 -----------------------------
-Unit tests for the Meta WhatsApp Business Cloud API sender.
+Unit tests for the 360dialog WhatsApp Business API sender.
 """
 
 from __future__ import annotations
@@ -22,8 +22,7 @@ class TestSendReportWhatsapp:
     """Tests for send_report_whatsapp()."""
 
     _ENV = {
-        "WHATSAPP_PHONE_NUMBER_ID": "123456789",
-        "WHATSAPP_ACCESS_TOKEN": "test_access_token",
+        "WHATSAPP_API_KEY": "test_360dialog_api_key",
     }
 
     def _mock_ok_response(self):
@@ -42,13 +41,7 @@ class TestSendReportWhatsapp:
     def test_raises_when_credentials_missing(self):
         """Should raise WhatsAppSenderError when env vars are not set."""
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(WhatsAppSenderError, match="WHATSAPP_PHONE_NUMBER_ID"):
-                send_report_whatsapp("+447911123456", 1, "https://example.com/report.pdf")
-
-    def test_raises_when_only_phone_number_id_set(self):
-        env = {"WHATSAPP_PHONE_NUMBER_ID": "123"}
-        with patch.dict(os.environ, env, clear=True):
-            with pytest.raises(WhatsAppSenderError, match="WHATSAPP_ACCESS_TOKEN"):
+            with pytest.raises(WhatsAppSenderError, match="WHATSAPP_API_KEY"):
                 send_report_whatsapp("+447911123456", 1, "https://example.com/report.pdf")
 
     def test_raises_for_invalid_phone_number(self):
@@ -57,7 +50,7 @@ class TestSendReportWhatsapp:
                 send_report_whatsapp("not-a-number", 1, "https://example.com/report.pdf")
 
     def test_successful_send(self):
-        """A well-formed call with valid config should POST to the Graph API."""
+        """A well-formed call with valid config should POST to the 360dialog API."""
         with patch.dict(os.environ, self._ENV, clear=True):
             with patch("whatsapp_sender.requests.post") as mock_post:
                 mock_post.return_value = self._mock_ok_response()
@@ -67,14 +60,14 @@ class TestSendReportWhatsapp:
         mock_post.assert_called_once()
         call_kwargs = mock_post.call_args
         url = call_kwargs[0][0]
-        assert "123456789" in url
+        assert "360dialog" in url
         assert "messages" in url
         payload = call_kwargs[1]["json"]
-        assert payload["messaging_product"] == "whatsapp"
         assert payload["to"] == "447911123456"  # leading + stripped
         assert payload["type"] == "document"
         assert "link" in payload["document"]
         assert payload["document"]["link"] == "https://example.com/report.pdf"
+        assert "messaging_product" not in payload  # 360dialog does not use this field
 
     def test_strips_leading_plus_from_number(self):
         """Phone numbers with leading + should be normalised for the API."""
@@ -138,21 +131,21 @@ class TestSendReportWhatsapp:
                         "+447911123456", 1, "https://example.com/r.pdf"
                     )
 
-    def test_authorization_header_set(self):
+    def test_api_key_header_set(self):
         with patch.dict(os.environ, self._ENV, clear=True):
             with patch("whatsapp_sender.requests.post") as mock_post:
                 mock_post.return_value = self._mock_ok_response()
                 send_report_whatsapp("+447911123456", 1, "https://example.com/r.pdf")
 
         headers = mock_post.call_args[1]["headers"]
-        assert headers["Authorization"] == "Bearer test_access_token"
+        assert headers["D360-API-KEY"] == "test_360dialog_api_key"
 
-    def test_custom_api_version(self):
-        env = {**self._ENV, "WHATSAPP_API_VERSION": "v20.0"}
+    def test_custom_api_url(self):
+        env = {**self._ENV, "WHATSAPP_API_URL": "https://custom.example.com/v1/messages"}
         with patch.dict(os.environ, env, clear=True):
             with patch("whatsapp_sender.requests.post") as mock_post:
                 mock_post.return_value = self._mock_ok_response()
                 send_report_whatsapp("+447911123456", 1, "https://example.com/r.pdf")
 
         url = mock_post.call_args[0][0]
-        assert "v20.0" in url
+        assert url == "https://custom.example.com/v1/messages"

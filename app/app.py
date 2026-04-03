@@ -854,7 +854,7 @@ def api_send_email(run_id: int):
 @app.route("/api/runs/<int:run_id>/send/whatsapp", methods=["POST"])
 @login_required
 def api_send_whatsapp(run_id: int):
-    """Send a PDF report to a WhatsApp number via the Meta WhatsApp Cloud API."""
+    """Send a PDF report to a WhatsApp number via the 360dialog WhatsApp API."""
     run = get_run(app.instance_path, run_id)
     if run is None:
         return jsonify({"error": "Run not found."}), 404
