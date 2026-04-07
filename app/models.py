@@ -16,6 +16,7 @@ class User(UserMixin):
         self.id       = row["id"]
         self.username = row["username"]
         self.role     = row["role"]
+        self.status   = row.get("status", "active") or "active"
         # Do NOT store hashed password in session-persisted object
 
     # Flask-Login expects get_id() to return a string
@@ -23,15 +24,29 @@ class User(UserMixin):
         return str(self.id)
 
     @property
+    def is_super_admin(self) -> bool:
+        return (self.role or "").strip().lower() == "super_admin"
+
+    @property
     def is_admin(self) -> bool:
-        """Return True for users with admin or administrator role."""
-        return (self.role or "").strip().lower() in ("admin", "administrator")
+        """Return True for admin, administrator, or super_admin roles."""
+        return (self.role or "").strip().lower() in (
+            "admin", "administrator", "super_admin"
+        )
+
+    @property
+    def is_auditor(self) -> bool:
+        return (self.role or "").strip().lower() in (
+            "auditor", "admin", "administrator", "super_admin"
+        )
+
+    @property
+    def is_viewer(self) -> bool:
+        return True  # all roles can view
 
     @property
     def can_access_auditor_portal(self) -> bool:
-        """Return True for roles that may access the Auditor Portal.
-
-        Admins imply auditor privileges, so both 'admin'/'administrator'
-        and 'auditor' are permitted.
-        """
-        return (self.role or "").strip().lower() in ("auditor", "admin", "administrator")
+        """Return True for roles that may access the Auditor Portal."""
+        return (self.role or "").strip().lower() in (
+            "auditor", "admin", "administrator", "super_admin"
+        )

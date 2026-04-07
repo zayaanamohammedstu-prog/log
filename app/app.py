@@ -37,6 +37,7 @@ import os
 import sys
 import tempfile
 import traceback
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 from flask import (
@@ -55,6 +56,15 @@ from flask_login import (
     login_user,
     logout_user,
 )
+from flask_jwt_extended import (
+    JWTManager,
+    create_access_token,
+    create_refresh_token,
+    jwt_required,
+    get_jwt_identity,
+)
+from flask_socketio import SocketIO, emit, join_room
+from flask_cors import CORS
 
 # ---------------------------------------------------------------------------
 # Make the project root importable regardless of working directory
@@ -93,6 +103,17 @@ from db import (  # noqa: E402
     verify_password,
     list_users,
     delete_user,
+    list_pending_users,
+    approve_user,
+    reject_user,
+    soft_delete_user,
+    restore_user,
+    list_deleted_users,
+    update_user_role,
+    count_super_admins,
+    soft_delete_run,
+    restore_run,
+    list_deleted_runs,
 )
 from models import User  # noqa: E402
 from run_store import (  # noqa: E402
@@ -127,6 +148,21 @@ app = Flask(
 
 # Secret key for Flask sessions – override with env var in production
 app.secret_key = os.environ.get("LOGGUARD_SECRET_KEY", "dev-insecure-change-me")
+
+# ---------------------------------------------------------------------------
+# JWT, CORS, and SocketIO setup
+# ---------------------------------------------------------------------------
+app.config["JWT_SECRET_KEY"] = os.environ.get(
+    "LOGGUARD_JWT_SECRET", app.secret_key + "-jwt"
+)
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=8)
+jwt = JWTManager(app)
+CORS(app, origins=os.environ.get("LOGGUARD_CORS_ORIGINS", "*").split(","))
+socketio = SocketIO(
+    app,
+    cors_allowed_origins=os.environ.get("LOGGUARD_CORS_ORIGINS", "*"),
+    async_mode="eventlet",
+)
 
 # ---------------------------------------------------------------------------
 # Flask-Login setup
@@ -164,6 +200,19 @@ def _bootstrap_db() -> None:
     init_db(app.instance_path)
     init_run_store(app.instance_path)
     init_ledger(app.instance_path)
+
+    # Super-admin bootstrap (takes precedence)
+    sa_username = os.environ.get("LOGGUARD_SUPER_ADMIN_USERNAME", "").strip()
+    sa_password = os.environ.get("LOGGUARD_SUPER_ADMIN_PASSWORD", "").strip()
+    if sa_username and sa_password and count_super_admins(app.instance_path) == 0:
+        existing = get_user_by_username(app.instance_path, sa_username)
+        if not existing:
+            create_user(
+                app.instance_path, sa_username, sa_password,
+                role="super_admin", status="active",
+            )
+            app.logger.info("Bootstrap: super_admin user '%s' created.", sa_username)
+
     username = os.environ.get("LOGGUARD_ADMIN_USERNAME", "").strip()
     password = os.environ.get("LOGGUARD_ADMIN_PASSWORD", "").strip()
     if count_users(app.instance_path) == 0:
@@ -497,13 +546,21 @@ def login():
         password = request.form.get("password", "")
         row = get_user_by_username(app.instance_path, username)
         if row and verify_password(row["password"], password):
-            user = User(row)
-            login_user(user)
-            # Route by role; ignore next= to enforce separation of duties
-            if user.is_admin:
-                return redirect(url_for("admin"))
-            return redirect(url_for("auditor"))
-        error = "Invalid username or password."
+            # Check user status before allowing login
+            status = row.get("status", "active") or "active"
+            if status == "pending":
+                error = "Account pending approval."
+            elif status == "suspended":
+                error = "Account suspended."
+            else:
+                user = User(row)
+                login_user(user)
+                # Route by role; ignore next= to enforce separation of duties
+                if user.is_admin:
+                    return redirect(url_for("admin"))
+                return redirect(url_for("auditor"))
+        else:
+            error = "Invalid username or password."
     no_users = count_users(app.instance_path) == 0
     return render_template(
         "login.html",
@@ -684,6 +741,21 @@ def analyze():
             result["run_id"] = run_id
             result["filename"] = filename
             _last_results = result
+
+            # Broadcast real-time notification to connected audit room clients
+            try:
+                socketio.emit(
+                    "new_analysis",
+                    {
+                        "run_id": run_id,
+                        "username": current_user.username,
+                        "anomaly_count": result.get("anomaly_count"),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                    room="audit_room",
+                )
+            except Exception:
+                pass  # Non-fatal; don't break analysis if emit fails
 
         return jsonify(result)
 
@@ -957,12 +1029,12 @@ def api_admin_create_user():
 @app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
 @login_required
 def api_admin_delete_user(user_id: int):
-    """Delete a user by id. Admin only. Cannot delete yourself."""
+    """Soft-delete a user by id. Admin only. Cannot delete yourself."""
     if not current_user.is_admin:
         return jsonify({"error": "Admin access required."}), 403
     if user_id == current_user.id:
         return jsonify({"error": "You cannot delete your own account."}), 400
-    deleted = delete_user(app.instance_path, user_id)
+    deleted = soft_delete_user(app.instance_path, user_id, current_user.username)
     if not deleted:
         return jsonify({"error": "User not found."}), 404
     return jsonify({"deleted": True, "user_id": user_id})
@@ -1017,9 +1089,238 @@ def export_results(fmt: str):
 
 
 # ---------------------------------------------------------------------------
+# Viewer portal
+# ---------------------------------------------------------------------------
+
+@app.route("/viewer")
+@login_required
+def viewer():
+    """Viewer dashboard – read-only access for all authenticated users."""
+    return render_template("viewer.html", user=current_user)
+
+
+# ---------------------------------------------------------------------------
+# JWT API authentication endpoints
+# ---------------------------------------------------------------------------
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_login():
+    """JWT login endpoint for API / React frontend."""
+    data = request.get_json(force=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    if not username or not password:
+        return jsonify({"error": "username and password are required."}), 400
+    row = get_user_by_username(app.instance_path, username)
+    if not row or not verify_password(row["password"], password):
+        return jsonify({"error": "Invalid username or password."}), 401
+    status = row.get("status", "active") or "active"
+    if status == "pending":
+        return jsonify({"error": "Account pending approval."}), 403
+    if status == "suspended":
+        return jsonify({"error": "Account suspended."}), 403
+    identity = str(row["id"])
+    access_token = create_access_token(identity=identity)
+    refresh_token = create_refresh_token(identity=identity)
+    return jsonify({
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "user": {
+            "id": row["id"],
+            "username": row["username"],
+            "role": row["role"],
+            "status": status,
+        },
+    })
+
+
+@app.route("/api/auth/refresh", methods=["POST"])
+@jwt_required(refresh=True)
+def api_refresh():
+    """Return a new access token using a valid refresh token."""
+    identity = get_jwt_identity()
+    access_token = create_access_token(identity=identity)
+    return jsonify({"access_token": access_token})
+
+
+@app.route("/api/auth/me", methods=["GET"])
+@jwt_required()
+def api_me():
+    """Return current user info from JWT."""
+    user_id = int(get_jwt_identity())
+    row = get_user_by_id(app.instance_path, user_id)
+    if not row:
+        return jsonify({"error": "User not found."}), 404
+    return jsonify({
+        "id": row["id"],
+        "username": row["username"],
+        "role": row["role"],
+        "status": row.get("status", "active"),
+    })
+
+
+@app.route("/api/auth/register", methods=["POST"])
+def api_register():
+    """Registration API endpoint – creates a pending user."""
+    data = request.get_json(force=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    if not username or not password:
+        return jsonify({"error": "username and password are required."}), 400
+    if len(username) < 3:
+        return jsonify({"error": "Username must be at least 3 characters."}), 400
+    if len(password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters."}), 400
+    if get_user_by_username(app.instance_path, username):
+        return jsonify({"error": f"Username '{username}' already exists."}), 409
+    if count_users(app.instance_path) == 0:
+        role, status = "admin", "active"
+    else:
+        role, status = "auditor", "pending"
+    new_id = create_user(app.instance_path, username, password, role=role, status=status)
+    return jsonify({
+        "id": new_id,
+        "username": username,
+        "role": role,
+        "status": status,
+    }), 201
+
+
+# ---------------------------------------------------------------------------
+# Admin user approval / management API endpoints
+# ---------------------------------------------------------------------------
+
+@app.route("/api/admin/users/pending", methods=["GET"])
+@login_required
+def api_admin_pending_users():
+    """List users awaiting approval. Admin only."""
+    if not current_user.is_admin:
+        return jsonify({"error": "Admin access required."}), 403
+    users = list_pending_users(app.instance_path)
+    return jsonify({"users": users})
+
+
+@app.route("/api/admin/users/<int:user_id>/approve", methods=["POST"])
+@login_required
+def api_admin_approve_user(user_id: int):
+    """Approve a pending user. Admin only."""
+    if not current_user.is_admin:
+        return jsonify({"error": "Admin access required."}), 403
+    ok = approve_user(app.instance_path, user_id, current_user.username)
+    if not ok:
+        return jsonify({"error": "User not found."}), 404
+    return jsonify({"approved": True, "user_id": user_id})
+
+
+@app.route("/api/admin/users/<int:user_id>/reject", methods=["POST"])
+@login_required
+def api_admin_reject_user(user_id: int):
+    """Reject/suspend a user. Admin only."""
+    if not current_user.is_admin:
+        return jsonify({"error": "Admin access required."}), 403
+    ok = reject_user(app.instance_path, user_id, current_user.username)
+    if not ok:
+        return jsonify({"error": "User not found."}), 404
+    return jsonify({"rejected": True, "user_id": user_id})
+
+
+@app.route("/api/admin/users/<int:user_id>/role", methods=["PATCH"])
+@login_required
+def api_admin_update_role(user_id: int):
+    """Update a user's role. Admin only."""
+    if not current_user.is_admin:
+        return jsonify({"error": "Admin access required."}), 403
+    data = request.get_json(force=True) or {}
+    new_role = (data.get("role") or "").strip()
+    if not new_role:
+        return jsonify({"error": "role is required."}), 400
+    ok = update_user_role(app.instance_path, user_id, new_role)
+    if not ok:
+        return jsonify({"error": "User not found."}), 404
+    return jsonify({"updated": True, "user_id": user_id, "role": new_role})
+
+
+# ---------------------------------------------------------------------------
+# Soft-delete management routes
+# ---------------------------------------------------------------------------
+
+@app.route("/api/admin/users/deleted", methods=["GET"])
+@login_required
+def api_admin_deleted_users():
+    """List soft-deleted users. Super-admin only."""
+    if not current_user.is_super_admin:
+        return jsonify({"error": "Super-admin access required."}), 403
+    users = list_deleted_users(app.instance_path)
+    return jsonify({"users": users})
+
+
+@app.route("/api/admin/users/<int:user_id>/restore", methods=["POST"])
+@login_required
+def api_admin_restore_user(user_id: int):
+    """Restore a soft-deleted user. Super-admin only."""
+    if not current_user.is_super_admin:
+        return jsonify({"error": "Super-admin access required."}), 403
+    ok = restore_user(app.instance_path, user_id)
+    if not ok:
+        return jsonify({"error": "User not found."}), 404
+    return jsonify({"restored": True, "user_id": user_id})
+
+
+@app.route("/api/admin/runs/deleted", methods=["GET"])
+@login_required
+def api_admin_deleted_runs():
+    """List soft-deleted analysis runs. Super-admin only."""
+    if not current_user.is_super_admin:
+        return jsonify({"error": "Super-admin access required."}), 403
+    runs = list_deleted_runs(app.instance_path)
+    return jsonify({"runs": runs})
+
+
+@app.route("/api/admin/runs/<int:run_id>/delete", methods=["POST"])
+@login_required
+def api_admin_soft_delete_run(run_id: int):
+    """Soft-delete an analysis run. Admin only."""
+    if not current_user.is_admin:
+        return jsonify({"error": "Admin access required."}), 403
+    ok = soft_delete_run(app.instance_path, run_id, current_user.username)
+    if not ok:
+        return jsonify({"error": "Run not found."}), 404
+    return jsonify({"deleted": True, "run_id": run_id})
+
+
+@app.route("/api/admin/runs/<int:run_id>/restore", methods=["POST"])
+@login_required
+def api_admin_restore_run(run_id: int):
+    """Restore a soft-deleted analysis run. Super-admin only."""
+    if not current_user.is_super_admin:
+        return jsonify({"error": "Super-admin access required."}), 403
+    ok = restore_run(app.instance_path, run_id)
+    if not ok:
+        return jsonify({"error": "Run not found."}), 404
+    return jsonify({"restored": True, "run_id": run_id})
+
+
+# ---------------------------------------------------------------------------
+# Socket.IO events
+# ---------------------------------------------------------------------------
+
+@socketio.on("connect")
+def on_connect():
+    """Handle a new Socket.IO connection."""
+    emit("connected", {"message": "Connected to LogGuard audit stream."})
+
+
+@socketio.on("join_audit_room")
+def on_join_audit_room(data):
+    """Join the shared audit room for real-time analysis notifications."""
+    join_room("audit_room")
+    emit("joined", {"room": "audit_room"})
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    socketio.run(app, host="0.0.0.0", port=port, debug=False)

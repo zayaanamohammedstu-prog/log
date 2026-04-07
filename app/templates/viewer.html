@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LogGuard — Viewer Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body class="workbench-page" data-username="{{ user.username }}" data-role="{{ user.role }}" data-userid="{{ user.id }}">
+
+<!-- =================== SIDEBAR =================== -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <span class="shield">🛡</span>
+    <div>
+      <div class="sidebar-brand-name">LogGuard</div>
+      <div class="sidebar-brand-sub">Viewer Dashboard</div>
+    </div>
+  </div>
+
+  <div class="sidebar-section-label">Reports</div>
+  <ul class="sidebar-nav">
+    <li class="active" data-tab-link="tab-overview">
+      <a href="#" onclick="return false;"><span class="nav-icon">📊</span> Overview</a>
+    </li>
+    <li data-tab-link="tab-history">
+      <a href="#" onclick="return false;"><span class="nav-icon">📋</span> Run History</a>
+    </li>
+  </ul>
+
+  <div class="sidebar-section-label">Account</div>
+  <ul class="sidebar-nav">
+    <li>
+      <a href="{{ url_for('logout') }}"><span class="nav-icon">🚪</span> Sign Out</a>
+    </li>
+  </ul>
+
+  <div class="sidebar-user">
+    <span class="nav-icon">👤</span>
+    <span>{{ user.username }}</span>
+    <span class="badge badge-info">{{ user.role }}</span>
+  </div>
+</nav>
+<!-- =================== MAIN =================== -->
+<main class="main-content" id="main-content">
+  <header class="topbar">
+    <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+    <h1 class="topbar-title">LogGuard <span class="badge badge-info">Viewer</span></h1>
+    <div class="topbar-actions">
+      <span class="text-muted">Read-only access</span>
+    </div>
+  </header>
+
+  <!-- Overview Tab -->
+  <section id="tab-overview" class="tab-panel active">
+    <div class="section-header">
+      <h2>Dashboard Overview</h2>
+      <p class="text-muted">Latest analysis summary — read-only view.</p>
+    </div>
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Requests</div>
+        <div class="stat-value" id="stat-total">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Anomalies</div>
+        <div class="stat-value text-danger" id="stat-anomalies">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Anomaly Rate</div>
+        <div class="stat-value" id="stat-rate">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Normal Entries</div>
+        <div class="stat-value text-success" id="stat-normal">—</div>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <h3>Risk Distribution</h3>
+        <canvas id="chart-risk"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Anomaly Timeline</h3>
+        <canvas id="chart-timeline"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- History Tab -->
+  <section id="tab-history" class="tab-panel" style="display:none;">
+    <div class="section-header">
+      <h2>Analysis Run History</h2>
+    </div>
+    <div id="runs-list">
+      <p class="text-muted">Loading runs…</p>
+    </div>
+  </section>
+</main>
+
+<script>
+  // Minimal viewer JS — loads summary from last run and renders charts
+  (async function () {
+    try {
+      const resp = await fetch('/api/runs');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const runs = data.runs || [];
+      if (!runs.length) return;
+      const latest = runs[0];
+      const sumResp = await fetch(`/api/runs/${latest.id}/summary`);
+      if (!sumResp.ok) return;
+      const summary = await sumResp.json();
+
+      document.getElementById('stat-total').textContent = summary.total_requests ?? '—';
+      document.getElementById('stat-anomalies').textContent = summary.anomaly_count ?? '—';
+      document.getElementById('stat-normal').textContent = summary.normal_count ?? '—';
+      document.getElementById('stat-rate').textContent =
+        summary.anomaly_rate != null ? summary.anomaly_rate.toFixed(2) + '%' : '—';
+
+      const riskDist = summary.risk_distribution || {};
+      if (Object.keys(riskDist).length) {
+        new Chart(document.getElementById('chart-risk'), {
+          type: 'doughnut',
+          data: {
+            labels: Object.keys(riskDist),
+            datasets: [{ data: Object.values(riskDist) }],
+          },
+        });
+      }
+
+      const timeline = summary.timeline || [];
+      if (timeline.length) {
+        new Chart(document.getElementById('chart-timeline'), {
+          type: 'line',
+          data: {
+            labels: timeline.map(t => t.hour_bucket),
+            datasets: [{
+              label: 'Mean Risk Score',
+              data: timeline.map(t => t.mean_risk_score),
+              tension: 0.3,
+            }],
+          },
+        });
+      }
+
+      // Render run history
+      const runsHtml = runs.map(r =>
+        `<div class="run-row">
+          <strong>#${r.id}</strong> — ${r.timestamp} — ${r.username} — ${r.input_type}
+          ${r.filename ? `<em>(${r.filename})</em>` : ''}
+        </div>`
+      ).join('');
+      document.getElementById('runs-list').innerHTML = runsHtml || '<p class="text-muted">No runs found.</p>';
+    } catch (e) {
+      console.error('Viewer load error:', e);
+    }
+
+    // Tab switching
+    document.querySelectorAll('[data-tab-link]').forEach(el => {
+      el.addEventListener('click', () => {
+        const target = el.dataset.tabLink;
+        document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+        document.querySelectorAll('[data-tab-link]').forEach(l => l.classList.remove('active'));
+        const panel = document.getElementById(target);
+        if (panel) panel.style.display = '';
+        el.classList.add('active');
+      });
+    });
+  })();
+</script>
+</body>
+</html>
