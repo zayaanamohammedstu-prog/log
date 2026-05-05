@@ -4,122 +4,411 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LogGuard — Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
-<body class="workbench-page">
+<body class="bg-gray-950 text-gray-100 min-h-screen flex">
 
-<!-- =================== SIDEBAR =================== -->
-<nav class="sidebar" id="sidebar">
-  <div class="sidebar-brand">
-    <span class="shield">🛡</span>
+<div id="toast-container"></div>
+
+{% if forbidden %}
+<!-- Access Denied -->
+<div class="flex-1 flex items-center justify-center flex-col gap-4 text-center px-6">
+  <span class="text-6xl">🔒</span>
+  <h2 class="text-2xl font-bold">Access Denied</h2>
+  {% if forbidden_page == "auditor" %}
+  <p class="text-gray-400">The <strong>Auditor Portal</strong> is restricted to auditor-role users.</p>
+  <a href="{{ url_for('admin') }}" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-semibold transition mt-2">Go to Admin Portal</a>
+  {% else %}
+  <p class="text-gray-400">The <strong>Admin Portal</strong> is restricted to admin-role users.</p>
+  <a href="{{ url_for('auditor') }}" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-semibold transition mt-2">Go to Auditor Portal</a>
+  {% endif %}
+</div>
+
+{% else %}
+<!-- Sidebar -->
+<aside id="sidebar" class="w-60 bg-gray-900 border-r border-gray-800 flex flex-col min-h-screen">
+  <div class="px-5 py-5 border-b border-gray-800 flex items-center gap-2">
+    <span class="text-2xl">🛡</span>
     <div>
-      <div class="sidebar-brand-name">LogGuard</div>
-      <div class="sidebar-brand-sub">Audit Workbench</div>
+      <div class="font-bold text-sm">LogGuard</div>
+      <div class="text-xs text-gray-400">Admin Portal</div>
     </div>
   </div>
-  <ul class="sidebar-nav">
-    <li><a href="{{ url_for('auditor') }}"><span class="nav-icon">📊</span> Overview</a></li>
-    <li><a href="{{ url_for('auditor') }}#anomalies"><span class="nav-icon">🔍</span> Anomaly Explorer</a></li>
-    <li><a href="{{ url_for('auditor') }}#charts"><span class="nav-icon">📈</span> Evidence &amp; Reports</a></li>
-    <li><a href="{{ url_for('auditor') }}#history"><span class="nav-icon">📜</span> Upload History</a></li>
-    {% if user.is_admin %}
-    <li class="active"><a href="{{ url_for('admin') }}"><span class="nav-icon">⚙️</span> Admin</a></li>
-    {% endif %}
-  </ul>
-</nav>
+  <nav class="flex-1 py-4 px-3 space-y-1 text-sm">
+    <a href="#" onclick="showTab('overview')" class="nav-link flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-800 transition text-gray-300 hover:text-white" id="nav-overview">
+      <span>📊</span> Overview
+    </a>
+    <a href="#" onclick="showTab('users')" class="nav-link flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-800 transition text-gray-300 hover:text-white" id="nav-users">
+      <span>👥</span> All Users
+    </a>
+    <a href="#" onclick="showTab('pending')" class="nav-link flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-800 transition text-gray-300 hover:text-white" id="nav-pending">
+      <span>⏳</span> Pending <span id="pendingBadge" class="ml-auto bg-yellow-600 text-white text-xs px-2 py-0.5 rounded-full hidden">0</span>
+    </a>
+    <a href="#" onclick="showTab('auditors')" class="nav-link flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-800 transition text-gray-300 hover:text-white" id="nav-auditors">
+      <span>🔍</span> Auditors
+    </a>
+    <a href="#" onclick="showTab('companies')" class="nav-link flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-800 transition text-gray-300 hover:text-white" id="nav-companies">
+      <span>🏢</span> Companies
+    </a>
+    <hr class="border-gray-800 my-2" />
+    <a href="{{ url_for('auditor') }}" class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-800 transition text-gray-400 hover:text-white">
+      <span>📈</span> Audit Workbench
+    </a>
+  </nav>
+  <div class="px-4 py-4 border-t border-gray-800 text-xs text-gray-500">
+    Logged in as <strong class="text-gray-300">{{ user.username }}</strong>
+    <form method="POST" action="{{ url_for('logout') }}" class="mt-2">
+      <button type="submit" class="text-red-400 hover:text-red-300 transition">Sign Out</button>
+    </form>
+  </div>
+</aside>
 
-<!-- =================== MAIN =================== -->
-<div class="workbench-main">
-
-  <!-- Top bar -->
-  <header class="topbar">
-    <div class="topbar-left">
-      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">☰</button>
-      <h1 class="topbar-title">Administration</h1>
+<!-- Main content -->
+<div class="flex-1 flex flex-col min-h-screen">
+  <!-- Topbar -->
+  <header class="bg-gray-900 border-b border-gray-800 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <button onclick="document.getElementById('sidebar').classList.toggle('hidden')" class="text-gray-400 hover:text-white text-xl">☰</button>
+      <h1 class="font-bold text-lg" id="pageTitle">System Administration</h1>
     </div>
-    <div class="topbar-right">
-      <div class="user-menu">
-        <span class="user-name">{{ user.username }}</span>
-        <span class="user-role role-{{ user.role }}">{{ user.role }}</span>
-        <form method="POST" action="{{ url_for('logout') }}" style="display:inline;">
-          <button type="submit" class="btn btn-secondary btn-sm">Sign Out</button>
-        </form>
-      </div>
+    <div class="flex items-center gap-3">
+      <span class="text-sm text-gray-400">{{ user.username }}</span>
+      <span class="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded-full">{{ user.role }}</span>
+      <button onclick="openAddUserModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-sm font-semibold transition">+ Add User</button>
     </div>
   </header>
 
-  <!-- Content -->
-  <main class="content-area">
+  <main class="flex-1 p-6">
 
-    {% if forbidden %}
-    <!-- Access denied -->
-    <div class="admin-forbidden">
-      <div class="forbidden-icon">🔒</div>
-      <h2>Access Denied</h2>
-      {% if forbidden_page == "auditor" %}
-      <p>The <strong>Auditor Portal</strong> is restricted to auditor-role users.</p>
-      <p>As an administrator, your portal is the <a href="{{ url_for('admin') }}">Admin Portal</a>.</p>
-      <a href="{{ url_for('admin') }}" class="btn btn-primary" style="margin-top:16px;">Go to Admin Portal</a>
-      {% else %}
-      <p>The <strong>Admin Portal</strong> is restricted to admin-role users.</p>
-      <p>Your current role: <span class="user-role role-{{ user.role }}">{{ user.role }}</span></p>
-      <a href="{{ url_for('auditor') }}" class="btn btn-primary" style="margin-top:16px;">Go to Auditor Portal</a>
-      {% endif %}
+    <!-- Overview Tab -->
+    <div id="tab-overview" class="tab-content">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" id="statsCards">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div class="text-3xl font-bold text-blue-400" id="statUsers">—</div>
+          <div class="text-xs text-gray-400 mt-1 uppercase tracking-wider">Total Users</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div class="text-3xl font-bold text-green-400" id="statRuns">—</div>
+          <div class="text-xs text-gray-400 mt-1 uppercase tracking-wider">Analysis Runs</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div class="text-3xl font-bold text-yellow-400" id="statPending">—</div>
+          <div class="text-xs text-gray-400 mt-1 uppercase tracking-wider">Pending Approvals</div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div class="text-3xl font-bold text-purple-400">v2.0</div>
+          <div class="text-xs text-gray-400 mt-1 uppercase tracking-wider">Workbench Version</div>
+        </div>
+      </div>
+
+      <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-4">
+        <h3 class="font-bold mb-3">Session Info</h3>
+        <div class="text-sm space-y-2 text-gray-300">
+          <div class="flex justify-between"><span class="text-gray-500">Username</span><strong>{{ user.username }}</strong></div>
+          <div class="flex justify-between"><span class="text-gray-500">Role</span><span class="bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded text-xs">{{ user.role }}</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">DB Engine</span><span>SQLite</span></div>
+        </div>
+      </div>
     </div>
 
-    {% else %}
-    <!-- Admin panel -->
-    <div class="admin-panel">
-      <div class="section-header">
-        <h2>System Administration</h2>
-        <p class="section-desc">LogGuard Audit Workbench — system overview</p>
+    <!-- All Users Tab -->
+    <div id="tab-users" class="tab-content hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-bold text-lg">All Users</h2>
+        <button onclick="loadUsers()" class="text-sm text-blue-400 hover:underline">Refresh</button>
       </div>
-
-      <div class="cards" style="margin-top:24px;">
-        <div class="card card-ok">
-          <div class="card-value">{{ user_count }}</div>
-          <div class="card-label">Registered Users</div>
-        </div>
-        <div class="card">
-          <div class="card-value">v1.0</div>
-          <div class="card-label">Workbench Version</div>
-        </div>
-        <div class="card card-warn">
-          <div class="card-value">SQLite</div>
-          <div class="card-label">Database Engine</div>
-        </div>
-      </div>
-
-      <div class="admin-info-card" style="margin-top:32px;">
-        <h3>Current Session</h3>
-        <table class="info-table">
-          <tr><td>Username</td><td><strong>{{ user.username }}</strong></td></tr>
-          <tr><td>Role</td><td><span class="user-role role-{{ user.role }}">{{ user.role }}</span></td></tr>
-          <tr><td>User ID</td><td>{{ user.id }}</td></tr>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-800 text-gray-400 text-xs uppercase tracking-wider">
+            <tr>
+              <th class="px-4 py-3 text-left">ID</th>
+              <th class="px-4 py-3 text-left">Username</th>
+              <th class="px-4 py-3 text-left">Role</th>
+              <th class="px-4 py-3 text-left">Status</th>
+              <th class="px-4 py-3 text-left">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody" class="divide-y divide-gray-800">
+            <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">Loading...</td></tr>
+          </tbody>
         </table>
       </div>
+    </div>
 
-      <div class="admin-info-card" style="margin-top:24px;">
-        <h3>Environment Notes</h3>
-        <ul class="admin-notes">
-          <li>Database is stored in the Flask <code>instance/</code> folder (excluded from version control).</li>
-          <li>To create additional users, set <code>LOGGUARD_ADMIN_USERNAME</code> /
-              <code>LOGGUARD_ADMIN_PASSWORD</code> environment variables and restart with an empty DB,
-              or use the Python shell to call <code>app.db.create_user()</code>.</li>
-          <li>Set <code>LOGGUARD_SECRET_KEY</code> to a strong random value in production.</li>
-        </ul>
+    <!-- Pending Tab -->
+    <div id="tab-pending" class="tab-content hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-bold text-lg">Pending Approvals</h2>
+        <button onclick="loadPending()" class="text-sm text-blue-400 hover:underline">Refresh</button>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-800 text-gray-400 text-xs uppercase tracking-wider">
+            <tr>
+              <th class="px-4 py-3 text-left">ID</th>
+              <th class="px-4 py-3 text-left">Username</th>
+              <th class="px-4 py-3 text-left">Role</th>
+              <th class="px-4 py-3 text-left">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="pendingTableBody" class="divide-y divide-gray-800">
+            <tr><td colspan="4" class="px-4 py-6 text-center text-gray-500">Loading...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
-    {% endif %}
+
+    <!-- Auditors Tab -->
+    <div id="tab-auditors" class="tab-content hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-bold text-lg">Auditors</h2>
+        <button onclick="loadUsers()" class="text-sm text-blue-400 hover:underline">Refresh</button>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-800 text-gray-400 text-xs uppercase tracking-wider">
+            <tr>
+              <th class="px-4 py-3 text-left">ID</th>
+              <th class="px-4 py-3 text-left">Username</th>
+              <th class="px-4 py-3 text-left">Status</th>
+              <th class="px-4 py-3 text-left">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="auditorsTableBody" class="divide-y divide-gray-800">
+            <tr><td colspan="4" class="px-4 py-6 text-center text-gray-500">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Companies Tab -->
+    <div id="tab-companies" class="tab-content hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-bold text-lg">Companies</h2>
+        <button onclick="loadUsers()" class="text-sm text-blue-400 hover:underline">Refresh</button>
+      </div>
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-800 text-gray-400 text-xs uppercase tracking-wider">
+            <tr>
+              <th class="px-4 py-3 text-left">ID</th>
+              <th class="px-4 py-3 text-left">Username</th>
+              <th class="px-4 py-3 text-left">Status</th>
+              <th class="px-4 py-3 text-left">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="companiesTableBody" class="divide-y divide-gray-800">
+            <tr><td colspan="4" class="px-4 py-6 text-center text-gray-500">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
 
   </main>
 </div>
 
+<!-- Add User Modal -->
+<div id="addUserModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 hidden">
+  <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+    <h3 class="font-bold text-lg mb-4">Add New User</h3>
+    <div class="space-y-3">
+      <input type="text" id="newUsername" placeholder="Username" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500" />
+      <input type="password" id="newPassword" placeholder="Password" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500" />
+      <select id="newRole" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500">
+        <option value="auditor">Auditor</option>
+        <option value="admin">Admin</option>
+        <option value="viewer">Viewer</option>
+      </select>
+    </div>
+    <div class="flex gap-3 mt-5">
+      <button onclick="submitAddUser()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm font-semibold transition">Create</button>
+      <button onclick="closeAddUserModal()" class="flex-1 bg-gray-800 hover:bg-gray-700 text-white py-2 rounded-lg text-sm transition">Cancel</button>
+    </div>
+  </div>
+</div>
+
+{% endif %}
+
 <script>
-  document.getElementById("sidebarToggle").addEventListener("click", function () {
-    document.getElementById("sidebar").classList.toggle("collapsed");
-    document.querySelector(".workbench-main").classList.toggle("sidebar-collapsed");
+function showToast(msg, type='info', duration=4000) {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 400); }, duration);
+}
+
+{% if not forbidden %}
+const tabs = ['overview', 'users', 'pending', 'auditors', 'companies'];
+const tabTitles = { overview: 'System Administration', users: 'All Users', pending: 'Pending Approvals', auditors: 'Auditors', companies: 'Companies' };
+
+function showTab(name) {
+  tabs.forEach(t => {
+    document.getElementById('tab-' + t).classList.add('hidden');
+    const nav = document.getElementById('nav-' + t);
+    if (nav) nav.classList.remove('bg-gray-800', 'text-white');
   });
+  document.getElementById('tab-' + name).classList.remove('hidden');
+  document.getElementById('pageTitle').textContent = tabTitles[name] || name;
+  const nav = document.getElementById('nav-' + name);
+  if (nav) { nav.classList.add('bg-gray-800', 'text-white'); }
+  if (name === 'users' || name === 'auditors' || name === 'companies') loadUsers();
+  if (name === 'pending') loadPending();
+  if (name === 'overview') loadStats();
+}
+
+function statusBadge(s) {
+  const map = { active: 'bg-green-900/50 text-green-300', pending: 'bg-yellow-900/50 text-yellow-300', suspended: 'bg-red-900/50 text-red-300' };
+  return `<span class="text-xs px-2 py-0.5 rounded-full ${map[s] || 'bg-gray-700 text-gray-300'}">${s}</span>`;
+}
+
+function roleBadge(r) {
+  const map = { admin: 'bg-purple-900/50 text-purple-300', super_admin: 'bg-red-900/50 text-red-300', auditor: 'bg-blue-900/50 text-blue-300', viewer: 'bg-gray-700 text-gray-300' };
+  return `<span class="text-xs px-2 py-0.5 rounded-full ${map[r] || 'bg-gray-700 text-gray-300'}">${r}</span>`;
+}
+
+async function loadStats() {
+  try {
+    const res = await fetch('/api/admin/stats');
+    const data = await res.json();
+    document.getElementById('statUsers').textContent = data.user_count ?? '—';
+    document.getElementById('statRuns').textContent = data.total_runs ?? '—';
+    const pRes = await fetch('/api/admin/users/pending');
+    const pData = await pRes.json();
+    const count = pData.users ? pData.users.length : 0;
+    document.getElementById('statPending').textContent = count;
+    if (count > 0) {
+      const badge = document.getElementById('pendingBadge');
+      badge.textContent = count;
+      badge.classList.remove('hidden');
+    }
+  } catch(e) {}
+}
+
+async function loadUsers() {
+  try {
+    const res = await fetch('/api/admin/users');
+    const data = await res.json();
+    const users = data.users || [];
+
+    const allBody = document.getElementById('usersTableBody');
+    const audBody = document.getElementById('auditorsTableBody');
+    const comBody = document.getElementById('companiesTableBody');
+
+    const makeActions = (u) => `
+      <div class="flex gap-2 flex-wrap">
+        ${u.status === 'pending' ? `<button onclick="approveUser(${u.id})" class="text-xs bg-green-700 hover:bg-green-600 text-white px-2 py-1 rounded transition">Approve</button>` : ''}
+        ${u.status !== 'suspended' ? `<button onclick="rejectUser(${u.id})" class="text-xs bg-yellow-700 hover:bg-yellow-600 text-white px-2 py-1 rounded transition">Suspend</button>` : ''}
+        <button onclick="deleteUser(${u.id})" class="text-xs bg-red-800 hover:bg-red-700 text-white px-2 py-1 rounded transition">Delete</button>
+      </div>`;
+
+    if (allBody) allBody.innerHTML = users.length ? users.map(u => `
+      <tr class="hover:bg-gray-800/30">
+        <td class="px-4 py-3 text-gray-400">${u.id}</td>
+        <td class="px-4 py-3 font-medium">${u.username}</td>
+        <td class="px-4 py-3">${roleBadge(u.role)}</td>
+        <td class="px-4 py-3">${statusBadge(u.status)}</td>
+        <td class="px-4 py-3">${makeActions(u)}</td>
+      </tr>`).join('') : '<tr><td colspan="5" class="px-4 py-6 text-center text-gray-500">No users found.</td></tr>';
+
+    const auditors = users.filter(u => u.role === 'auditor');
+    if (audBody) audBody.innerHTML = auditors.length ? auditors.map(u => `
+      <tr class="hover:bg-gray-800/30">
+        <td class="px-4 py-3 text-gray-400">${u.id}</td>
+        <td class="px-4 py-3 font-medium">${u.username}</td>
+        <td class="px-4 py-3">${statusBadge(u.status)}</td>
+        <td class="px-4 py-3">${makeActions(u)}</td>
+      </tr>`).join('') : '<tr><td colspan="4" class="px-4 py-6 text-center text-gray-500">No auditors found.</td></tr>';
+
+    const companies = users.filter(u => u.role !== 'auditor' && u.role !== 'admin' && u.role !== 'super_admin');
+    if (comBody) comBody.innerHTML = companies.length ? companies.map(u => `
+      <tr class="hover:bg-gray-800/30">
+        <td class="px-4 py-3 text-gray-400">${u.id}</td>
+        <td class="px-4 py-3 font-medium">${u.username}</td>
+        <td class="px-4 py-3">${statusBadge(u.status)}</td>
+        <td class="px-4 py-3">${makeActions(u)}</td>
+      </tr>`).join('') : '<tr><td colspan="4" class="px-4 py-6 text-center text-gray-500">No company users found.</td></tr>';
+  } catch(e) { showToast('Failed to load users.', 'error'); }
+}
+
+async function loadPending() {
+  try {
+    const res = await fetch('/api/admin/users/pending');
+    const data = await res.json();
+    const users = data.users || [];
+    const body = document.getElementById('pendingTableBody');
+    if (!body) return;
+    if (users.length === 0) {
+      body.innerHTML = '<tr><td colspan="4" class="px-4 py-6 text-center text-gray-500">No pending approvals.</td></tr>';
+      return;
+    }
+    body.innerHTML = users.map(u => `
+      <tr class="hover:bg-gray-800/30">
+        <td class="px-4 py-3 text-gray-400">${u.id}</td>
+        <td class="px-4 py-3 font-medium">${u.username}</td>
+        <td class="px-4 py-3">${roleBadge(u.role)}</td>
+        <td class="px-4 py-3">
+          <div class="flex gap-2">
+            <button onclick="approveUser(${u.id})" class="text-xs bg-green-700 hover:bg-green-600 text-white px-3 py-1 rounded transition">Approve</button>
+            <button onclick="rejectUser(${u.id})" class="text-xs bg-red-700 hover:bg-red-600 text-white px-3 py-1 rounded transition">Reject</button>
+          </div>
+        </td>
+      </tr>`).join('');
+  } catch(e) { showToast('Failed to load pending users.', 'error'); }
+}
+
+async function approveUser(id) {
+  const res = await fetch(`/api/admin/users/${id}/approve`, { method: 'POST' });
+  const d = await res.json();
+  if (res.ok) { showToast('User approved.', 'success'); loadUsers(); loadPending(); loadStats(); }
+  else showToast(d.error || 'Failed to approve.', 'error');
+}
+
+async function rejectUser(id) {
+  const res = await fetch(`/api/admin/users/${id}/reject`, { method: 'POST' });
+  const d = await res.json();
+  if (res.ok) { showToast('User suspended.', 'warning'); loadUsers(); loadPending(); }
+  else showToast(d.error || 'Failed to suspend.', 'error');
+}
+
+async function deleteUser(id) {
+  if (!confirm('Delete this user?')) return;
+  const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+  const d = await res.json();
+  if (res.ok) { showToast('User deleted.', 'success'); loadUsers(); loadStats(); }
+  else showToast(d.error || 'Failed to delete.', 'error');
+}
+
+function openAddUserModal() { document.getElementById('addUserModal').classList.remove('hidden'); }
+function closeAddUserModal() { document.getElementById('addUserModal').classList.add('hidden'); }
+
+async function submitAddUser() {
+  const username = document.getElementById('newUsername').value.trim();
+  const password = document.getElementById('newPassword').value;
+  const role = document.getElementById('newRole').value;
+  if (!username || !password) { showToast('Username and password are required.', 'error'); return; }
+  const res = await fetch('/api/admin/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, role }),
+  });
+  const d = await res.json();
+  if (res.ok) {
+    showToast(`User '${username}' created.`, 'success');
+    closeAddUserModal();
+    loadUsers();
+    loadStats();
+  } else showToast(d.error || 'Failed to create user.', 'error');
+}
+
+// Init
+const urlParams = new URLSearchParams(window.location.search);
+const initTab = urlParams.get('tab') || 'overview';
+showTab(initTab);
+{% endif %}
 </script>
 </body>
 </html>

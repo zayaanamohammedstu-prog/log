@@ -4,71 +4,72 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LogGuard — Sign In</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
-<body class="login-page">
+<body class="bg-gray-950 text-gray-100 min-h-screen flex items-center justify-center px-4">
 
-<div class="login-wrapper">
-  <div class="login-card">
-    <!-- Brand -->
-    <div class="login-brand">
-      <span class="login-shield">🛡</span>
-      <div>
-        <div class="login-brand-name">LogGuard</div>
-        <div class="login-brand-sub">Audit Workbench</div>
-      </div>
-    </div>
+<div id="toast-container"></div>
 
-    <h1 class="login-title">Sign in to your account</h1>
+<div class="w-full max-w-sm">
+  <!-- Brand -->
+  <div class="text-center mb-8">
+    <span class="text-5xl">🛡</span>
+    <h1 class="text-2xl font-extrabold mt-3 tracking-tight">LogGuard</h1>
+    <p class="text-gray-400 text-sm mt-1">Audit Workbench</p>
+  </div>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-xl">
+    <h2 class="text-lg font-bold mb-6 text-center">Sign in to your account</h2>
 
     {% if no_users %}
-    <div class="alert alert-warning">
-      <strong>Setup required:</strong> No users exist yet. Set
-      <code>LOGGUARD_ADMIN_USERNAME</code> and <code>LOGGUARD_ADMIN_PASSWORD</code>
-      environment variables and restart the server to create the first admin account.
+    <div class="bg-yellow-900/30 border border-yellow-700 text-yellow-300 rounded-lg px-4 py-3 text-sm mb-5">
+      <strong>Setup required:</strong> No users exist. Set <code>LOGGUARD_ADMIN_USERNAME</code> and <code>LOGGUARD_ADMIN_PASSWORD</code> env vars and restart.
     </div>
     {% endif %}
 
-    {% if error %}
-    <div class="alert alert-danger">{{ error }}</div>
-    {% endif %}
-
-    <form method="POST" action="{{ url_for('login', next=request.args.get('next', '')) }}" class="login-form">
-      <div class="form-group">
-        <label for="username">Username</label>
-        <input
-          type="text"
-          id="username"
-          name="username"
-          autocomplete="username"
-          required
-          autofocus
-          placeholder="Enter your username"
-        />
-      </div>
-      <div class="form-group">
-        <label for="password">Password</label>
-        <input
-          type="password"
-          id="password"
-          name="password"
-          autocomplete="current-password"
-          required
-          placeholder="Enter your password"
-        />
-      </div>
-      <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+    <form method="POST" action="{{ url_for('login', next=request.args.get('next', '')) }}" id="loginForm" class="space-y-4">
+      <input
+        type="text" name="username" id="username"
+        placeholder="Username"
+        autocomplete="username" required autofocus
+        class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500"
+      />
+      <input
+        type="password" name="password" id="password"
+        placeholder="Password"
+        autocomplete="current-password" required
+        class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500"
+      />
+      <button type="submit"
+        class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-lg transition text-sm">
+        Sign In
+      </button>
     </form>
 
     {% if signup_allowed %}
-    <p style="text-align:center;margin-top:1rem;font-size:.875rem;">
-      No account yet? <a href="{{ url_for('register') }}">Create an account</a>
+    <p class="text-center mt-5 text-sm text-gray-400">
+      No account yet? <a href="{{ url_for('register') }}" class="text-blue-400 hover:underline">Create an account</a>
     </p>
     {% endif %}
-
-    <p class="login-footer-text">LogGuard Audit Workbench &copy; 2024</p>
   </div>
+
+  <p class="text-center mt-6 text-xs text-gray-600">LogGuard Audit Workbench &copy; 2024</p>
 </div>
 
+<script>
+function showToast(msg, type='info', duration=4000) {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 400); }, duration);
+}
+{% if error %}
+document.addEventListener('DOMContentLoaded', () => showToast({{ error | tojson }}, 'error'));
+{% endif %}
+</script>
 </body>
 </html>

@@ -33,13 +33,17 @@ def init_db(instance_path: str) -> None:
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS users (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                username   TEXT    NOT NULL UNIQUE,
-                password   TEXT    NOT NULL,
-                role       TEXT    NOT NULL DEFAULT 'auditor',
-                status     TEXT    NOT NULL DEFAULT 'active',
-                deleted_at TEXT,
-                deleted_by TEXT
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                username       TEXT    NOT NULL UNIQUE,
+                password       TEXT    NOT NULL,
+                role           TEXT    NOT NULL DEFAULT 'auditor',
+                status         TEXT    NOT NULL DEFAULT 'active',
+                email          TEXT,
+                email_verified INTEGER DEFAULT 0,
+                user_type      TEXT    DEFAULT 'auditor',
+                verify_token   TEXT,
+                deleted_at     TEXT,
+                deleted_by     TEXT
             );
 
             CREATE TABLE IF NOT EXISTS analysis_runs (
@@ -98,6 +102,10 @@ def init_db(instance_path: str) -> None:
             "ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
             "ALTER TABLE users ADD COLUMN deleted_at TEXT",
             "ALTER TABLE users ADD COLUMN deleted_by TEXT",
+            "ALTER TABLE users ADD COLUMN email TEXT",
+            "ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN user_type TEXT DEFAULT 'auditor'",
+            "ALTER TABLE users ADD COLUMN verify_token TEXT",
         ]:
             try:
                 conn.execute(alter_sql)
@@ -118,6 +126,8 @@ def create_user(
     password: str,
     role: str = "auditor",
     status: str = "active",
+    email: str = "",
+    user_type: str = "",
 ) -> int:
     """Hash *password* and insert a new user row. Returns the new row id."""
     # Normalise role: strip whitespace and lowercase to prevent mismatch bugs
@@ -128,8 +138,8 @@ def create_user(
     conn = sqlite3.connect(_db_path(instance_path))
     try:
         cur = conn.execute(
-            "INSERT INTO users (username, password, role, status) VALUES (?, ?, ?, ?)",
-            (username, hashed, role, status),
+            "INSERT INTO users (username, password, role, status, email, user_type) VALUES (?, ?, ?, ?, ?, ?)",
+            (username, hashed, role, status, email or "", user_type or ""),
         )
         conn.commit()
         return cur.lastrowid
@@ -366,6 +376,63 @@ def promote_user_to_admin(instance_path: str, username: str) -> bool:
         )
         conn.commit()
         return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def get_user_by_email(instance_path: str, email: str) -> dict | None:
+    """Return user row as dict or None if not found by email."""
+    conn = sqlite3.connect(_db_path(instance_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT id, username, password, role, status, email, email_verified, user_type, deleted_at, deleted_by"
+            " FROM users WHERE email = ? AND deleted_at IS NULL",
+            (email,),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def mark_email_verified(instance_path: str, user_id: int) -> bool:
+    """Set email_verified=1 for the given user. Returns True if a row was updated."""
+    conn = sqlite3.connect(_db_path(instance_path))
+    try:
+        cur = conn.execute(
+            "UPDATE users SET email_verified = 1, verify_token = NULL WHERE id = ? AND deleted_at IS NULL",
+            (user_id,),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def set_email_verification_token(instance_path: str, user_id: int, token: str) -> None:
+    """Store a verification token for the given user."""
+    conn = sqlite3.connect(_db_path(instance_path))
+    try:
+        conn.execute(
+            "UPDATE users SET verify_token = ? WHERE id = ?",
+            (token, user_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_by_verification_token(instance_path: str, token: str) -> dict | None:
+    """Return the user row for the given verification token, or None."""
+    conn = sqlite3.connect(_db_path(instance_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT id, username, role, status, email, email_verified, user_type"
+            " FROM users WHERE verify_token = ? AND deleted_at IS NULL",
+            (token,),
+        ).fetchone()
+        return dict(row) if row else None
     finally:
         conn.close()
 

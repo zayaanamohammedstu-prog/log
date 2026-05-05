@@ -4,86 +4,197 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LogGuard — Create Account</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
-<body class="login-page">
+<body class="bg-gray-950 text-gray-100 min-h-screen flex items-center justify-center px-4 py-10">
 
-<div class="login-wrapper">
-  <div class="login-card">
-    <!-- Brand -->
-    <div class="login-brand">
-      <span class="login-shield">🛡</span>
-      <div>
-        <div class="login-brand-name">LogGuard</div>
-        <div class="login-brand-sub">Audit Workbench</div>
-      </div>
-    </div>
+<div id="toast-container"></div>
 
-    <h1 class="login-title">Create an account</h1>
-
-    {% if signup_disabled %}
-    <div class="alert alert-danger">
-      <strong>Registration is disabled.</strong>
-      Account creation is not currently available. Contact your administrator.
-    </div>
-    <p style="text-align:center;margin-top:1rem;">
-      <a href="{{ url_for('login') }}">← Back to Sign In</a>
-    </p>
-    {% else %}
-
-    {% if error %}
-    <div class="alert alert-danger">{{ error }}</div>
-    {% endif %}
-
-    <form method="POST" action="{{ url_for('register') }}" class="login-form">
-      <div class="form-group">
-        <label for="username">Username</label>
-        <input
-          type="text"
-          id="username"
-          name="username"
-          autocomplete="username"
-          required
-          autofocus
-          placeholder="Choose a username (min 3 chars)"
-          minlength="3"
-        />
-      </div>
-      <div class="form-group">
-        <label for="password">Password</label>
-        <input
-          type="password"
-          id="password"
-          name="password"
-          autocomplete="new-password"
-          required
-          placeholder="Choose a password (min 6 chars)"
-          minlength="6"
-        />
-      </div>
-      <div class="form-group">
-        <label for="confirm_password">Confirm Password</label>
-        <input
-          type="password"
-          id="confirm_password"
-          name="confirm_password"
-          autocomplete="new-password"
-          required
-          placeholder="Re-enter your password"
-        />
-      </div>
-      <button type="submit" class="btn btn-primary btn-full">Create Account</button>
-    </form>
-
-    <p style="text-align:center;margin-top:1rem;font-size:.875rem;">
-      Already have an account? <a href="{{ url_for('login') }}">Sign In</a>
-    </p>
-
-    {% endif %}
-
-    <p class="login-footer-text">LogGuard Audit Workbench &copy; 2024</p>
+<div class="w-full max-w-md">
+  <!-- Brand -->
+  <div class="text-center mb-8">
+    <span class="text-5xl">🛡</span>
+    <h1 class="text-2xl font-extrabold mt-3 tracking-tight">LogGuard</h1>
+    <p class="text-gray-400 text-sm mt-1">Create an Account</p>
   </div>
+
+  {% if signup_disabled %}
+  <div class="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-xl text-center">
+    <div class="text-4xl mb-4">🔒</div>
+    <h2 class="text-lg font-bold mb-2">Registration Disabled</h2>
+    <p class="text-gray-400 text-sm mb-6">Account creation is not currently available. Contact your administrator.</p>
+    <a href="{{ url_for('login') }}" class="text-blue-400 hover:underline text-sm">← Back to Sign In</a>
+  </div>
+  {% else %}
+
+  <!-- Step 1: Role selection -->
+  <div id="step-role" class="space-y-4">
+    <h2 class="text-center text-lg font-bold mb-4 text-gray-200">Select your account type</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <button onclick="selectRole('company')"
+        class="role-card group bg-gray-900 border-2 border-gray-700 hover:border-orange-500 rounded-2xl p-6 text-left transition-all cursor-pointer"
+        data-role="company">
+        <div class="text-3xl mb-3">🏢</div>
+        <h3 class="font-bold text-base mb-1">Sign up as Company</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">Register your organization to manage audit engagements.</p>
+        <span class="mt-3 inline-block bg-orange-900/40 text-orange-300 text-xs font-bold px-3 py-1 rounded-full">Company</span>
+      </button>
+      <button onclick="selectRole('auditor')"
+        class="role-card group bg-gray-900 border-2 border-gray-700 hover:border-green-500 rounded-2xl p-6 text-left transition-all cursor-pointer"
+        data-role="auditor">
+        <div class="text-3xl mb-3">🔍</div>
+        <h3 class="font-bold text-base mb-1">Sign up as Auditor</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">Analyze log files, explore anomalies, and generate reports.</p>
+        <span class="mt-3 inline-block bg-green-900/40 text-green-300 text-xs font-bold px-3 py-1 rounded-full">Auditor</span>
+      </button>
+    </div>
+    <p class="text-center mt-4 text-sm text-gray-400">
+      Already have an account? <a href="{{ url_for('login') }}" class="text-blue-400 hover:underline">Sign In</a>
+    </p>
+  </div>
+
+  <!-- Step 2: Registration form -->
+  <div id="step-form" class="hidden">
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-xl">
+      <button onclick="goBack()" class="text-gray-400 hover:text-white text-sm mb-4 flex items-center gap-1">
+        ← Back
+      </button>
+      <div class="flex items-center gap-3 mb-6">
+        <span id="roleIcon" class="text-2xl"></span>
+        <div>
+          <h2 class="font-bold text-base">Create your account</h2>
+          <p class="text-xs text-gray-400" id="roleLabel"></p>
+        </div>
+      </div>
+
+      <form id="registerForm" class="space-y-4" onsubmit="handleRegister(event)">
+        <input type="hidden" id="selectedRole" name="user_type" value="" />
+        <input
+          type="text" name="username" id="regUsername"
+          placeholder="Username (min 3 characters)"
+          autocomplete="username" required minlength="3"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500"
+        />
+        <input
+          type="email" name="email" id="regEmail"
+          placeholder="Email address"
+          autocomplete="email"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500"
+        />
+        <input
+          type="password" name="password" id="regPassword"
+          placeholder="Password (min 6 characters)"
+          autocomplete="new-password" required minlength="6"
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500"
+        />
+        <input
+          type="password" name="confirm_password" id="regConfirm"
+          placeholder="Confirm password"
+          autocomplete="new-password" required
+          class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500 placeholder-gray-500"
+        />
+        <button type="submit" id="submitBtn"
+          class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-lg transition text-sm">
+          Create Account
+        </button>
+      </form>
+
+      <div class="mt-4 bg-blue-900/20 border border-blue-800 rounded-lg px-4 py-3 text-xs text-blue-300">
+        ℹ️ After registration your account will be reviewed and activated by an administrator.
+      </div>
+    </div>
+    <p class="text-center mt-4 text-sm text-gray-400">
+      Already have an account? <a href="{{ url_for('login') }}" class="text-blue-400 hover:underline">Sign In</a>
+    </p>
+  </div>
+
+  <!-- Success message -->
+  <div id="step-success" class="hidden">
+    <div class="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-xl text-center">
+      <div class="text-5xl mb-4">✅</div>
+      <h2 class="text-lg font-bold mb-2">Registration Successful!</h2>
+      <p class="text-gray-400 text-sm mb-2">Your account has been created and is awaiting admin approval.</p>
+      <p class="text-gray-500 text-xs mb-6">You will be able to log in once your account is approved.</p>
+      <a href="{{ url_for('login') }}" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg text-sm font-semibold transition">Go to Sign In</a>
+    </div>
+  </div>
+
+  {% endif %}
 </div>
 
+<script>
+function showToast(msg, type='info', duration=4000) {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  c.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 400); }, duration);
+}
+
+const roleConfig = {
+  company: { icon: '🏢', label: 'Registering as Company' },
+  auditor: { icon: '🔍', label: 'Registering as Auditor' },
+};
+
+// Pre-select from URL param
+const urlType = new URLSearchParams(window.location.search).get('type');
+if (urlType && (urlType === 'company' || urlType === 'auditor')) {
+  selectRole(urlType);
+}
+
+function selectRole(role) {
+  document.getElementById('selectedRole').value = role;
+  document.getElementById('roleIcon').textContent = roleConfig[role].icon;
+  document.getElementById('roleLabel').textContent = roleConfig[role].label;
+  document.getElementById('step-role').classList.add('hidden');
+  document.getElementById('step-form').classList.remove('hidden');
+}
+
+function goBack() {
+  document.getElementById('step-form').classList.add('hidden');
+  document.getElementById('step-role').classList.remove('hidden');
+}
+
+async function handleRegister(e) {
+  e.preventDefault();
+  const username = document.getElementById('regUsername').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const password = document.getElementById('regPassword').value;
+  const confirm = document.getElementById('regConfirm').value;
+  const user_type = document.getElementById('selectedRole').value;
+
+  if (username.length < 3) { showToast('Username must be at least 3 characters.', 'error'); return; }
+  if (password.length < 6) { showToast('Password must be at least 6 characters.', 'error'); return; }
+  if (password !== confirm) { showToast('Passwords do not match.', 'error'); return; }
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = 'Creating account...';
+
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password, user_type }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Registration failed.', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Create Account';
+    } else {
+      document.getElementById('step-form').classList.add('hidden');
+      document.getElementById('step-success').classList.remove('hidden');
+    }
+  } catch (err) {
+    showToast('Network error. Please try again.', 'error');
+    btn.disabled = false;
+    btn.textContent = 'Create Account';
+  }
+}
+</script>
 </body>
 </html>

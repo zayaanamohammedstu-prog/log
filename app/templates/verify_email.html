@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LogGuard — Email Verification</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex items-center justify-center px-4">
+<div class="w-full max-w-sm text-center">
+  <span class="text-5xl">{% if success %}✅{% else %}❌{% endif %}</span>
+  <h1 class="text-2xl font-bold mt-4 mb-2">{% if success %}Email Verified{% else %}Verification Failed{% endif %}</h1>
+  <p class="text-gray-400 mb-6">{{ message }}</p>
+  <a href="{{ url_for('login') }}" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-semibold transition text-sm">Go to Sign In</a>
+</div>
+</body>
+</html>

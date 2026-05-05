@@ -101,7 +101,7 @@ def generate_html_report(
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>LogGuard Analysis Report &ndash; Run #{run_id}</title>
+  <title>LogGuard Analysis Report &ndash; Run {run_id}</title>
   <style>
     body {{
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -130,7 +130,7 @@ def generate_html_report(
 <body>
   <h1>&#x1F6E1; LogGuard Anomaly Detection Report</h1>
   <p>
-    <strong>Run ID:</strong> #{run_id} &nbsp;&mdash;&nbsp;
+    <strong>Run ID:</strong> {run_id} &nbsp;&mdash;&nbsp;
     <strong>Analyst:</strong> {username} &nbsp;&mdash;&nbsp;
     <strong>Timestamp:</strong> {html.escape(ts)}
   </p>
@@ -251,7 +251,7 @@ def generate_pdf_report(
 
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 6, _safe(f"Run #{run_id}   |   Analyst: {username}   |   {ts}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, _safe(f"Run {run_id}  |  Analyst: {username}  |  {ts}"), new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
 
     # ── Executive summary ────────────────────────────────────────────────────
