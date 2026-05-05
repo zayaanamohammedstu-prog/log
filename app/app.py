@@ -114,6 +114,10 @@ from db import (  # noqa: E402
     soft_delete_run,
     restore_run,
     list_deleted_runs,
+    get_user_by_email,
+    mark_email_verified,
+    set_email_verification_token,
+    get_user_by_verification_token,
 )
 from models import User  # noqa: E402
 from run_store import (  # noqa: E402
@@ -520,7 +524,7 @@ def main():
         if current_user.is_admin:
             return redirect(url_for("admin"))
         return redirect(url_for("auditor"))
-    return render_template("main.html", signup_allowed=_signup_allowed())
+    return render_template("main.html", signup_allowed=_signup_allowed(), now=datetime.utcnow())
 
 
 @app.route("/auditor")
@@ -1165,6 +1169,8 @@ def api_register():
     data = request.get_json(force=True) or {}
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
+    email = (data.get("email") or "").strip()
+    user_type = (data.get("user_type") or "auditor").strip().lower()
     if not username or not password:
         return jsonify({"error": "username and password are required."}), 400
     if len(username) < 3:
@@ -1173,16 +1179,23 @@ def api_register():
         return jsonify({"error": "Password must be at least 6 characters."}), 400
     if get_user_by_username(app.instance_path, username):
         return jsonify({"error": f"Username '{username}' already exists."}), 409
+    if email and get_user_by_email(app.instance_path, email):
+        return jsonify({"error": "An account with that email already exists."}), 409
     if count_users(app.instance_path) == 0:
         role, status = "admin", "active"
     else:
         role, status = "auditor", "pending"
-    new_id = create_user(app.instance_path, username, password, role=role, status=status)
+    new_id = create_user(
+        app.instance_path, username, password,
+        role=role, status=status,
+        email=email, user_type=user_type,
+    )
     return jsonify({
         "id": new_id,
         "username": username,
         "role": role,
         "status": status,
+        "message": "Registration successful. Awaiting admin approval." if status == "pending" else "Account created.",
     }), 201
 
 
@@ -1298,6 +1311,52 @@ def api_admin_restore_run(run_id: int):
     if not ok:
         return jsonify({"error": "Run not found."}), 404
     return jsonify({"restored": True, "run_id": run_id})
+
+
+@app.route("/verify-email/<token>")
+def verify_email(token: str):
+    """Email verification endpoint."""
+    user_row = get_user_by_verification_token(app.instance_path, token)
+    if not user_row:
+        return render_template("verify_email.html", success=False,
+                               message="Invalid or expired verification link."), 400
+    mark_email_verified(app.instance_path, user_row["id"])
+    return render_template("verify_email.html", success=True,
+                           message="Email verified! Your account is awaiting admin approval.")
+
+
+@app.route("/super-admin")
+@login_required
+def super_admin():
+    """Super-admin dashboard."""
+    if not current_user.is_super_admin:
+        return render_template(
+            "admin.html", forbidden=True, forbidden_page="admin", user=current_user
+        ), 403
+    user_count = count_users(app.instance_path)
+    return render_template(
+        "super_admin.html",
+        user=current_user,
+        user_count=user_count,
+    )
+
+
+@app.route("/admin/auditors")
+@login_required
+def admin_auditors():
+    """Redirect to admin page with auditors tab."""
+    if not current_user.is_admin:
+        return redirect(url_for("login"))
+    return redirect(url_for("admin") + "?tab=auditors")
+
+
+@app.route("/admin/companies")
+@login_required
+def admin_companies():
+    """Redirect to admin page with companies tab."""
+    if not current_user.is_admin:
+        return redirect(url_for("login"))
+    return redirect(url_for("admin") + "?tab=companies")
 
 
 # ---------------------------------------------------------------------------
