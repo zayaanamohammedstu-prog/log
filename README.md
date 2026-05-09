@@ -57,6 +57,8 @@ logguard/
 └── requirements.txt
 ```
 
+See also: [`ROADMAP.md`](ROADMAP.md) for role flows, UI map, key files, and contribution guidance.
+
 ---
 
 ## Quick Start
@@ -163,6 +165,7 @@ JSON `401` response (not an HTML redirect).
 | `GET/POST` | `/login` | Login page / authenticate |
 | `GET/POST` | `/logout` | End session |
 | `GET` | `/admin` | Admin panel (admin role required) |
+| `GET` | `/super-admin` | Super Admin panel (super_admin role required) |
 | `GET` | `/api/status` | Health-check + model status |
 | `POST` | `/api/analyze` | Analyse log data; returns JSON results + `run_id` |
 | `POST` | `/api/ingest` | Real-time ingestion endpoint for JSON log payloads |
@@ -191,7 +194,7 @@ standard analysis JSON with `run_id`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/runs` | List all analysis runs (newest first) |
+| `GET` | `/api/runs` | List runs (auditors see only their own runs; admins see all) |
 | `GET` | `/api/runs/<run_id>` | Get run metadata + all result rows |
 | `GET` | `/api/runs/<run_id>/anomalies/<anomaly_id>` | Single anomaly row detail |
 | `GET` | `/api/runs/<run_id>/ips/<ip>/timeline` | All rows for a specific IP in a run |
@@ -218,6 +221,14 @@ Use `POST /api/feedback` with:
 Feedback is saved per user and upserted on repeat submissions (latest vote
 wins). Aggregate counts are available via
 `GET /api/feedback/counts?run_id=<id>`.
+
+---
+
+## UI Guide
+
+- Open **Guide** in the Audit Workbench sidebar for concise feature help.
+- Super admins can access the dedicated panel at **`/super-admin`**.
+- From Admin, use **Audit Workbench** in the sidebar to jump directly to `/auditor`.
 
 ### Audit ledger (admin only)
 

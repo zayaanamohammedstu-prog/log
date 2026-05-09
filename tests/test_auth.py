@@ -308,6 +308,7 @@ class TestRegistration:
         resp = client.get("/register")
         assert resp.status_code == 403
         assert b"disabled" in resp.data.lower()
+        assert b"LOGGUARD_ENABLE_PUBLIC_SIGNUP=true" in resp.data
 
     def test_register_enabled_by_env_flag(self, tmp_instance, client, monkeypatch):
         """GET /register returns 200 when LOGGUARD_ENABLE_PUBLIC_SIGNUP=true."""

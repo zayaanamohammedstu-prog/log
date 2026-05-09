@@ -750,7 +750,7 @@ function renderTable(rows) {
 // RENDER: EVIDENCE PANEL
 // ============================================================
 function renderEvidence(data) {
-  const engagement = document.getElementById("engagementSelect")?.value || "—";
+  const engagement = "Current run";
 
   // Audit summary
   const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
@@ -1127,7 +1127,15 @@ async function loadRunHistory() {
     const resp = await apiFetch("/api/runs");
     if (!resp) return;
     const data = await resp.json();
-    const runs = data.runs || [];
+    const role = (document.body.dataset.role || "").toLowerCase();
+    const user = document.body.dataset.username || "";
+    const runs = role === "auditor"
+      ? (data.runs || []).filter(run => (run.username || "") === user)
+      : (data.runs || []);
+    const hint = document.getElementById("historyScopeHint");
+    if (hint && role === "auditor") {
+      hint.innerHTML = "Auditor mode: only your uploads are shown. Use <strong>Load</strong> to restore your past run or <strong>Report</strong> to download its HTML report.";
+    }
 
     if (!runs.length) {
       tbody.innerHTML = '<tr><td colspan="7" class="placeholder">No runs yet. Upload a log file to get started.</td></tr>';
@@ -1447,10 +1455,20 @@ async function runAnalysis(body, headers = {}) {
 // ============================================================
 function exportTableCsv() {
   if (!_allAnomalies.length) { showToast("No data to export.", "error"); return; }
-  const cols = ["ip_address","hour_bucket","anomaly_score","requests_per_hour","error_rate","unique_endpoints","post_ratio","is_off_hours","has_scanner_ua"];
-  const header = cols.join(",");
+  const cols = [
+    { key: "ip_address", label: "IP" },
+    { key: "hour_bucket", label: "Hour" },
+    { key: "anomaly_score", label: "Score" },
+    { key: "requests_per_hour", label: "Req/Hr" },
+    { key: "error_rate", label: "Err%" },
+    { key: "unique_endpoints", label: "Endpoints" },
+    { key: "post_ratio", label: "POST%" },
+    { key: "is_off_hours", label: "OffHrs" },
+    { key: "has_scanner_ua", label: "ScannerUA" },
+  ];
+  const header = cols.map(c => c.label).join(",");
   const rows = _allAnomalies.map(r => cols.map(c => {
-    const v = r[c];
+    const v = r[c.key];
     if (v === null || v === undefined) return "";
     if (typeof v === "string" && v.includes(",")) return `"${v}"`;
     return v;
@@ -1467,17 +1485,13 @@ function copySummary() {
   if (!_lastData) { showToast("No data to copy.", "error"); return; }
   const d = _lastData;
   const text = [
-    `LogGuard Audit Summary — ${new Date().toLocaleString()}`,
-    `Engagement: ${document.getElementById("engagementSelect")?.value || "—"}`,
-    `Auditor: ${document.body.dataset.username || "—"}`,
-    "",
-    `Total Log Entries:   ${(d.total_requests||0).toLocaleString()}`,
-    `IP/Hour Buckets:     ${(d.total_ip_hour_buckets||0).toLocaleString()}`,
-    `Anomalous Buckets:   ${(d.anomaly_count||0).toLocaleString()}`,
-    `Normal Buckets:      ${(d.normal_count||0).toLocaleString()}`,
-    `Anomaly Rate:        ${(d.anomaly_rate||0).toFixed(2)}%`,
-    "",
-    `Risk Distribution:`,
+    `LogGuard Summary | ${new Date().toLocaleString()}`,
+    `Run: #${d.run_id || _lastRunId || "—"}`,
+    `Analyst: ${document.body.dataset.username || "—"}`,
+    `Total: ${(d.total_requests||0).toLocaleString()}`,
+    `Buckets: ${(d.total_ip_hour_buckets||0).toLocaleString()}`,
+    `Anomalies: ${(d.anomaly_count||0).toLocaleString()} (${(d.anomaly_rate||0).toFixed(2)}%)`,
+    `Risk mix:`,
     ...Object.entries(d.risk_distribution||{}).map(([k,v]) => `  ${k}: ${v}`),
   ].join("\n");
   navigator.clipboard.writeText(text)

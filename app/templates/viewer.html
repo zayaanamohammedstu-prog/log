@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LogGuard — Viewer Dashboard</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body class="workbench-page" data-username="{{ user.username }}" data-role="{{ user.role }}" data-userid="{{ user.id }}">
@@ -171,5 +172,9 @@
     });
   })();
 </script>
+<div style="position:fixed;right:14px;bottom:14px;z-index:40;display:flex;flex-direction:column;gap:8px;">
+  <button class="btn btn-secondary btn-sm" aria-label="Scroll up" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })"><i class="fa-solid fa-chevron-up"></i></button>
+  <button class="btn btn-secondary btn-sm" aria-label="Scroll down" onclick="window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })"><i class="fa-solid fa-chevron-down"></i></button>
+</div>
 </body>
 </html>

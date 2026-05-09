@@ -44,6 +44,12 @@ def generate_html_report(
     anomaly_count = sum(1 for r in results if r.get("is_anomaly"))
     normal_count = total - anomaly_count
     anomaly_rate = round(anomaly_count / total * 100, 2) if total > 0 else 0.0
+    critical_count = sum(
+        1
+        for r in results
+        if (r.get("ensemble_score") or r.get("anomaly_score") or 0.0) >= 0.7
+    )
+    chain_count = len(chains)
 
     # Sort anomalies by score descending, take top 20
     anomalies = [r for r in results if r.get("is_anomaly")]
@@ -262,13 +268,15 @@ def generate_pdf_report(
     pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 180, pdf.get_y())
     pdf.ln(4)
 
-    # Stat boxes (4 columns)
-    col_w = 44
+    # Stat boxes (6 columns)
+    col_w = 29
     stats = [
-        ("Total Buckets", str(total)),
-        ("Anomalies", str(anomaly_count)),
-        ("Normal", str(normal_count)),
-        ("Anomaly Rate", f"{anomaly_rate}%"),
+        ("RUN", str(run_id)),
+        ("ANALYST", username),
+        ("BUCKETS", str(total)),
+        ("ANOM", str(anomaly_count)),
+        ("CRIT", str(critical_count)),
+        ("RATE", f"{anomaly_rate}%"),
     ]
     for label, value in stats:
         pdf.set_fill_color(236, 240, 241)
@@ -276,23 +284,31 @@ def generate_pdf_report(
         pdf.set_font("Helvetica", "", 7)
         pdf.set_text_color(127, 140, 141)
         pdf.set_xy(pdf.get_x(), pdf.get_y() + 2)
-        pdf.cell(col_w - 2, 5, label.upper(), align="C")
+        pdf.cell(col_w - 2, 5, _safe(label.upper()), align="C")
         pdf.set_xy(pdf.get_x() - (col_w - 2), pdf.get_y() + 5)
-        pdf.set_font("Helvetica", "B", 14)
+        pdf.set_font("Helvetica", "B", 10)
         pdf.set_text_color(231, 76, 60)
-        pdf.cell(col_w - 2, 8, value, align="C", new_x="RIGHT", new_y="TOP")
+        pdf.cell(col_w - 2, 8, _safe(str(value)), align="C", new_x="RIGHT", new_y="TOP")
     pdf.ln(26)
+
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(80, 80, 80)
+    summary_line = (
+        f"Timestamp: {ts} | Normal: {normal_count} | Attack chains: {chain_count}"
+    )
+    pdf.multi_cell(0, 6, _safe(summary_line))
+    pdf.ln(2)
 
     # ── Top anomalies table ──────────────────────────────────────────────────
     pdf.set_font("Helvetica", "B", 13)
     pdf.set_text_color(44, 62, 80)
-    pdf.cell(0, 8, "Top Anomalies (up to 20)", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 8, "Top Anomalies", new_x="LMARGIN", new_y="NEXT")
     pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 180, pdf.get_y())
     pdf.ln(4)
 
     # Table header
-    headers = ["IP Address", "Hour Bucket", "Score", "Reasons"]
-    col_widths = [38, 28, 22, 92]
+    headers = ["IP", "Hour", "Score", "Reason"]
+    col_widths = [38, 34, 22, 86]
     pdf.set_fill_color(44, 62, 80)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 8)
@@ -302,7 +318,7 @@ def generate_pdf_report(
 
     pdf.set_font("Helvetica", "", 7)
     fill = False
-    for r in anomalies_sorted:
+    for r in anomalies_sorted[:12]:
         ip = str(r.get("ip_address", ""))
         hb = str(r.get("hour_bucket", ""))
         score = r.get("ensemble_score") or r.get("anomaly_score") or 0.0
@@ -322,7 +338,7 @@ def generate_pdf_report(
             pass
 
         # Wrap reasons text to fit column and sanitise for latin-1
-        wrapped = _safe(textwrap.shorten(reasons_text, width=120, placeholder="..."))
+        wrapped = _safe(textwrap.shorten(reasons_text, width=70, placeholder="..."))
 
         fill_color = (249, 249, 249) if fill else (255, 255, 255)
         pdf.set_fill_color(*fill_color)
@@ -350,33 +366,16 @@ def generate_pdf_report(
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(51, 51, 51)
     if chains:
-        for chain in chains:
+        for chain in chains[:5]:
             severity = _safe(str(chain.get("severity", "")))
             narrative = _safe(str(chain.get("narrative", "")))
-            line = f"[{severity}] {narrative}"
+            line = f"[{severity}] {textwrap.shorten(narrative, width=100, placeholder='...')}"
             for chunk in textwrap.wrap(line, width=110) or [line]:
                 pdf.cell(0, 6, chunk, new_x="LMARGIN", new_y="NEXT")
     else:
         pdf.cell(0, 6, "No attack chains detected.", new_x="LMARGIN", new_y="NEXT")
 
     pdf.ln(6)
-
-    # ── Appendix ─────────────────────────────────────────────────────────────
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.set_text_color(44, 62, 80)
-    pdf.cell(0, 8, "Appendix - Model Settings", new_x="LMARGIN", new_y="NEXT")
-    pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 180, pdf.get_y())
-    pdf.ln(4)
-
-    pdf.set_font("Helvetica", "", 9)
-    pdf.set_text_color(51, 51, 51)
-    pdf.multi_cell(0, 6,
-        "Ensemble: IsolationForest + LocalOutlierFactor + OneClassSVM "
-        "(majority vote, contamination=0.05). "
-        "Per-model scores are normalised to [0, 1]; the ensemble_score is the "
-        "arithmetic mean across all three models. A row is flagged as anomalous "
-        "when at least 2 of 3 models vote positive."
-    )
 
     pdf.ln(8)
     pdf.set_font("Helvetica", "I", 8)
@@ -386,4 +385,3 @@ def generate_pdf_report(
     buf = io.BytesIO()
     pdf.output(buf)
     return buf.getvalue()
-

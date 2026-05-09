@@ -126,12 +126,19 @@
       <i class="fas fa-building w-5 text-lg group-hover:scale-110 transition-transform"></i>
       <span class="font-medium">Companies</span>
     </a>
+    {% if user.is_super_admin %}
+    <a href="{{ url_for('super_admin') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 text-gray-400 hover:text-white hover:bg-gray-800/50 group">
+      <i class="fas fa-user-shield w-5 text-lg group-hover:scale-110 transition-transform"></i>
+      <span class="font-medium">Super Admin</span>
+      <i class="fas fa-external-link-alt ml-auto text-xs opacity-50"></i>
+    </a>
+    {% endif %}
     
     <div class="my-4 border-t border-gray-800"></div>
     
     <!-- Workbench Button - Now Working -->
     <a href="{{ url_for('auditor') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 text-gray-400 hover:text-white hover:bg-gray-800/50 group">
-      <i class="fas fa-chart-line w-5 text-lg group-hover:scale-110 transition-transform"></i>
+      <i class="fas fa-magnifying-glass-chart w-5 text-lg group-hover:scale-110 transition-transform"></i>
       <span class="font-medium">Audit Workbench</span>
       <i class="fas fa-external-link-alt ml-auto text-xs opacity-50"></i>
     </a>
@@ -172,7 +179,7 @@
         <!-- Search Bar -->
         <div class="relative hidden md:block">
           <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm"></i>
-          <input type="text" id="globalSearch" placeholder="Search users..." class="bg-gray-800/50 border border-gray-700 rounded-xl pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all w-64" onkeyup="filterUsers()">
+          <input type="text" id="globalSearch" placeholder="Search users..." class="bg-gray-800/50 border border-gray-700 rounded-xl pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all w-full max-w-xs" onkeyup="filterUsers()">
         </div>
         
         <!-- Theme Toggle - Now Working -->
@@ -851,6 +858,10 @@ if (!isForbidden) {
   showTab(initTab);
 }
 </script>
+<div class="fixed right-4 bottom-4 z-40 flex flex-col gap-2">
+  <button class="bg-gray-800/80 border border-gray-700 hover:border-gray-500 px-3 py-2 rounded-lg text-gray-200" aria-label="Scroll up" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })"><i class="fas fa-chevron-up"></i></button>
+  <button class="bg-gray-800/80 border border-gray-700 hover:border-gray-500 px-3 py-2 rounded-lg text-gray-200" aria-label="Scroll down" onclick="window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })"><i class="fas fa-chevron-down"></i></button>
+</div>
 {% endif %}
 </body>
 </html>
