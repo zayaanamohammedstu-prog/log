@@ -287,7 +287,6 @@
       <div class="audit-summary" id="auditSummaryPanel">
         <div class="audit-summary-row">
           <div class="audit-summary-label">Engagement</div>
-          <div id="auditEngagement">—</div>
         </div>
         <div class="audit-summary-row">
           <div class="audit-summary-label">Analysis Date</div>
@@ -393,31 +392,26 @@
         <div class="export-card">
           <div class="export-icon">📊</div>
           <h4>Export as CSV</h4>
-          <p>Download the full IP/hour bucket results table as a comma-separated values file, suitable for Excel or audit tools.</p>
           <a class="btn btn-success" id="btnDownloadCsv" href="/api/export/csv">⬇ Download CSV</a>
         </div>
         <div class="export-card">
           <div class="export-icon">📄</div>
           <h4>Export as JSON</h4>
-          <p>Download the complete analysis payload as structured JSON, including all statistics, charts data, and metadata.</p>
           <a class="btn btn-primary" id="btnDownloadJson" href="/api/export/json">⬇ Download JSON</a>
         </div>
         <div class="export-card">
           <div class="export-icon">🖨</div>
           <h4>Print / PDF Report</h4>
-          <p>Open a printable audit summary report of the current analysis, formatted for documentation and stakeholder review.</p>
           <button class="btn btn-secondary" id="btnPrintReport">🖨 Print Report</button>
         </div>
         <div class="export-card">
           <div class="export-icon">📑</div>
           <h4>Download HTML Report</h4>
-          <p>Download a full auditor-friendly HTML report including executive summary, anomalies, attack chains narrative, and model settings appendix.</p>
           <button class="btn btn-primary" id="btnDownloadHtmlReport">⬇ Download HTML Report</button>
         </div>
         <div class="export-card">
           <div class="export-icon">📋</div>
           <h4>Copy Summary to Clipboard</h4>
-          <p>Copy a text summary of the key audit metrics to the clipboard for quick sharing or pasting into audit workpapers.</p>
           <button class="btn btn-secondary" id="btnCopySummary">📋 Copy Summary</button>
         </div>
       </div>
@@ -434,7 +428,6 @@
             <div class="share-card-icon share-icon-pdf">📥</div>
             <div class="share-card-body">
               <h4>Download PDF Report</h4>
-              <p>Generate and download a full audit report in PDF format, ready for printing or attaching to audit workpapers.</p>
             </div>
             <button class="btn btn-danger" id="btnDownloadPdf">📥 Download PDF</button>
           </div>
@@ -443,7 +436,6 @@
             <div class="share-card-icon share-icon-email">✉️</div>
             <div class="share-card-body">
               <h4>Send via Email</h4>
-              <p>Send the PDF report to any email address. Requires SMTP configuration on the server (see README).</p>
             </div>
             <button class="btn btn-primary" id="btnSendEmail">✉️ Send via Email</button>
           </div>
@@ -452,7 +444,6 @@
             <div class="share-card-icon share-icon-wa">💬</div>
             <div class="share-card-body">
               <h4>Send via WhatsApp</h4>
-              <p>Send the PDF report to a WhatsApp number using the 360dialog WhatsApp Business API. Requires a 360dialog API key on the server (see README).</p>
             </div>
             <button class="btn btn-success" id="btnSendWhatsapp">💬 Send via WhatsApp</button>
           </div>

@@ -38,7 +38,9 @@ import sys
 import tempfile
 import traceback
 from datetime import datetime, timedelta, timezone
-
+from mailer import send_report_email, MailerError
+from reporting import generate_pdf_report  # noqa: E402
+ # noqa: E402
 import pandas as pd
 from flask import (
     Flask,
@@ -910,13 +912,11 @@ def api_send_email(run_id: int):
     results = get_run_results(app.instance_path, run_id)
     chains = get_chains(app.instance_path, run_id)
     try:
-        from reporting import generate_pdf_report  # noqa: E402
         pdf_bytes = generate_pdf_report(run, results, chains)
     except ImportError:
         return jsonify({"error": "PDF generation requires the 'fpdf2' package."}), 500
 
     try:
-        from mailer import send_report_email, MailerError  # noqa: E402
         send_report_email(to_address, run_id, pdf_bytes)
     except MailerError as exc:
         app.logger.warning("Email send failed for run %s: %s", run_id, exc)
@@ -1190,12 +1190,13 @@ def api_register():
         role=role, status=status,
         email=email, user_type=user_type,
     )
+    message = "Registration successful. Awaiting admin approval." if status == "pending" else "Account created."
     return jsonify({
         "id": new_id,
         "username": username,
         "role": role,
         "status": status,
-        "message": "Registration successful. Awaiting admin approval." if status == "pending" else "Account created.",
+        "message": message,
     }), 201
 
 

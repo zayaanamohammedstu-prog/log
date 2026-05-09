@@ -226,7 +226,7 @@ def list_pending_users(instance_path: str) -> list[dict]:
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
-            "SELECT id, username, role, status, deleted_at, deleted_by"
+            "SELECT id, username, role, status, email, email_verified, deleted_at, deleted_by"
             " FROM users WHERE status = 'pending' AND deleted_at IS NULL ORDER BY id"
         ).fetchall()
         return [dict(r) for r in rows]
