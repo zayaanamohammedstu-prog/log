@@ -142,6 +142,7 @@ in step 2.
 | `LOGGUARD_ADMIN_PASSWORD` | Password for the bootstrap admin account (hashed with Werkzeug) |
 | `LOGGUARD_SECRET_KEY` | Flask session secret key (use a long random string in production) |
 | `LOGGUARD_ENABLE_PUBLIC_SIGNUP` | Set to `true` to allow anyone to self-register an account |
+| `LOGGUARD_SLACK_WEBHOOK_URL` | Optional Slack webhook URL for critical anomaly alerts |
 
 - The SQLite database (`logguard.db`) is stored in Flask's `instance/` folder and is excluded from version control.
 - Passwords are never stored in plaintext — Werkzeug's `pbkdf2:sha256` is used.
@@ -164,6 +165,9 @@ JSON `401` response (not an HTML redirect).
 | `GET` | `/admin` | Admin panel (admin role required) |
 | `GET` | `/api/status` | Health-check + model status |
 | `POST` | `/api/analyze` | Analyse log data; returns JSON results + `run_id` |
+| `POST` | `/api/ingest` | Real-time ingestion endpoint for JSON log payloads |
+| `POST` | `/api/feedback` | Mark an anomaly row as `confirmed` or `false_positive` |
+| `GET` | `/api/feedback/counts?run_id=<id>` | Retrieve feedback counts for anomalies in a run |
 | `GET` | `/api/results` | Return cached results from last analysis |
 | `GET` | `/api/export/csv` | Export last results as CSV |
 | `GET` | `/api/export/json` | Export last results as JSON |
@@ -174,6 +178,14 @@ JSON `401` response (not an HTML redirect).
 - `application/json` with `{"use_sample": true}` (bundled demo data)
 
 Response now includes `run_id`, `chains`, and per-row `explanations_json`.
+
+**POST `/api/ingest`** accepts:
+- `{"log_line": "<single line>"}`
+- `{"log_lines": ["line1", "line2"]}` or `{"logs": [...]}`
+- `{"log_text": "multiline\nlogs"}`
+
+The endpoint parses and analyses logs immediately, persists the run, and returns
+standard analysis JSON with `run_id`.
 
 ### Analysis run persistence
 
@@ -189,6 +201,23 @@ Response now includes `run_id`, `chains`, and per-row `explanations_json`.
 | `GET` | `/api/runs/<run_id>/report/pdf` | Download PDF audit report |
 | `POST` | `/api/runs/<run_id>/send/email` | Send PDF report via email (JSON body: `{"to": "user@example.com"}`) |
 | `POST` | `/api/runs/<run_id>/send/whatsapp` | Send PDF report via WhatsApp (JSON body: `{"to": "+447911123456"}`) |
+
+### Feedback loop
+
+Use `POST /api/feedback` with:
+
+```json
+{
+  "run_id": 12,
+  "ip_address": "10.0.0.5",
+  "hour_bucket": "2024-01-15T08:00:00+00:00",
+  "feedback": "false_positive"
+}
+```
+
+Feedback is saved per user and upserted on repeat submissions (latest vote
+wins). Aggregate counts are available via
+`GET /api/feedback/counts?run_id=<id>`.
 
 ### Audit ledger (admin only)
 
@@ -286,6 +315,43 @@ Every analysis run appends a SHA-256 hash-chain entry to the ledger.
 Each entry records: `prev_hash`, `timestamp`, `actor`, `input_hash`,
 `results_hash`, and `entry_hash`. Admins can verify integrity via
 `GET /api/audit/verify`.
+
+---
+
+## Docker / Gunicorn Deployment
+
+```bash
+docker build -t logguard .
+docker run -p 5000:5000 \
+  -e LOGGUARD_SECRET_KEY=your-secret \
+  -e LOGGUARD_ADMIN_USERNAME=admin \
+  -e LOGGUARD_ADMIN_PASSWORD=change-me \
+  logguard
+```
+
+Or use Compose:
+
+```bash
+docker compose up --build
+```
+
+---
+
+## Model Retraining + Rollback
+
+Retrain from collected user feedback:
+
+```bash
+python scripts/retrain_model.py retrain
+```
+
+Rollback to a previous version:
+
+```bash
+python scripts/retrain_model.py rollback --version model_YYYYMMDDTHHMMSSZ.joblib
+```
+
+Version metadata is tracked in `models/versions/registry.json`.
 
 ---
 

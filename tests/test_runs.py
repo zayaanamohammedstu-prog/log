@@ -24,6 +24,8 @@ from app.run_store import (
     save_chains,
     get_chains,
     get_chain,
+    save_anomaly_feedback,
+    get_feedback_counts,
 )
 
 
@@ -179,3 +181,51 @@ class TestChainsCRUD:
         chain_id = chains_a[0]["id"]
         # Should not be found when queried under run_b
         assert get_chain(store, run_b, chain_id) is None
+
+
+class TestFeedbackCRUD:
+    def test_save_and_count_feedback(self, store):
+        run_id = save_run(store, "alice", "sample", "h1")
+        save_anomaly_feedback(
+            store,
+            run_id=run_id,
+            ip_address="1.2.3.4",
+            hour_bucket="2024-01-01T00:00:00+00:00",
+            username="alice",
+            feedback="confirmed",
+        )
+        save_anomaly_feedback(
+            store,
+            run_id=run_id,
+            ip_address="1.2.3.4",
+            hour_bucket="2024-01-01T00:00:00+00:00",
+            username="bob",
+            feedback="false_positive",
+        )
+        counts = get_feedback_counts(store, run_id)
+        key = "1.2.3.4|2024-01-01T00:00:00+00:00"
+        assert counts[key]["confirmed"] == 1
+        assert counts[key]["false_positive"] == 1
+
+    def test_feedback_upsert_updates_user_vote(self, store):
+        run_id = save_run(store, "alice", "sample", "h1")
+        save_anomaly_feedback(
+            store,
+            run_id=run_id,
+            ip_address="1.2.3.4",
+            hour_bucket="2024-01-01T00:00:00+00:00",
+            username="alice",
+            feedback="confirmed",
+        )
+        save_anomaly_feedback(
+            store,
+            run_id=run_id,
+            ip_address="1.2.3.4",
+            hour_bucket="2024-01-01T00:00:00+00:00",
+            username="alice",
+            feedback="false_positive",
+        )
+        counts = get_feedback_counts(store, run_id)
+        key = "1.2.3.4|2024-01-01T00:00:00+00:00"
+        assert counts[key]["confirmed"] == 0
+        assert counts[key]["false_positive"] == 1

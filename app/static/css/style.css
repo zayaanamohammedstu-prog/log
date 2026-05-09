@@ -572,6 +572,10 @@ tbody tr.row-critical td:nth-child(4) { font-weight: 700; }
 tbody tr.row-danger  { background: rgba(248,81,73,.04); }
 td.placeholder { text-align: center; color: var(--text-muted); padding: 40px; }
 
+.feedback-cell { min-width: 220px; white-space: normal; }
+.feedback-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.feedback-counts { font-size: .74rem; color: var(--text-muted); }
+
 /* Pagination */
 .pagination {
   display: flex;

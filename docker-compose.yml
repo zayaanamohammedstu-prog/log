@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  logguard:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      LOGGUARD_SECRET_KEY: ${LOGGUARD_SECRET_KEY:-change-me}
+      LOGGUARD_ADMIN_USERNAME: ${LOGGUARD_ADMIN_USERNAME:-admin}
+      LOGGUARD_ADMIN_PASSWORD: ${LOGGUARD_ADMIN_PASSWORD:-admin123}
+      LOGGUARD_SLACK_WEBHOOK_URL: ${LOGGUARD_SLACK_WEBHOOK_URL:-}
+      PYTHONPATH: /app/app
+    volumes:
+      - ./instance:/app/instance
+      - ./model:/app/model
