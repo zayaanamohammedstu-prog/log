@@ -318,6 +318,7 @@ def generate_pdf_report(
 
     pdf.set_font("Helvetica", "", 7)
     fill = False
+    # Keep the PDF compact and readable on small screens by showing top 12 only.
     for r in anomalies_sorted[:12]:
         ip = str(r.get("ip_address", ""))
         hb = str(r.get("hour_bucket", ""))

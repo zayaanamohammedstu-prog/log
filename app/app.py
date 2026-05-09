@@ -39,11 +39,11 @@ import tempfile
 import traceback
 from datetime import datetime, timedelta, timezone
 try:
-    from mailer import send_report_email, MailerError
-    from reporting import generate_pdf_report  # noqa: E402
-except ModuleNotFoundError:  # pragma: no cover - import fallback for package mode
     from app.mailer import send_report_email, MailerError
     from app.reporting import generate_pdf_report  # noqa: E402
+except ModuleNotFoundError:  # pragma: no cover - fallback for direct module execution
+    from mailer import send_report_email, MailerError
+    from reporting import generate_pdf_report  # noqa: E402
 import pandas as pd
 from flask import (
     Flask,

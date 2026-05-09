@@ -754,7 +754,7 @@ function renderEvidence(data) {
 
   // Audit summary
   const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  setEl("auditEngagement",   engagement);
+  setEl("auditScope",        engagement);
   setEl("auditDate",         new Date().toLocaleString());
   setEl("auditTotalEntries", (data.total_requests || 0).toLocaleString());
   setEl("auditAnomalyRate",  (data.anomaly_rate || 0).toFixed(2) + "%");
@@ -1128,10 +1128,7 @@ async function loadRunHistory() {
     if (!resp) return;
     const data = await resp.json();
     const role = (document.body.dataset.role || "").toLowerCase();
-    const user = document.body.dataset.username || "";
-    const runs = role === "auditor"
-      ? (data.runs || []).filter(run => (run.username || "") === user)
-      : (data.runs || []);
+    const runs = data.runs || [];
     const hint = document.getElementById("historyScopeHint");
     if (hint && role === "auditor") {
       hint.innerHTML = "Auditor mode: only your uploads are shown. Use <strong>Load</strong> to restore your past run or <strong>Report</strong> to download its HTML report.";
