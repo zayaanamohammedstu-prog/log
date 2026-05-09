@@ -133,6 +133,8 @@ from run_store import (  # noqa: E402
     save_chains,
     get_chains,
     get_chain,
+    save_anomaly_feedback,
+    get_feedback_counts,
 )
 from audit_ledger import (  # noqa: E402
     init_ledger,
@@ -141,6 +143,7 @@ from audit_ledger import (  # noqa: E402
     verify_chain,
 )
 from reporting import generate_html_report  # noqa: E402
+from slack_alert import notify_critical_anomalies  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -457,6 +460,106 @@ def _analyse_df(raw_df: pd.DataFrame) -> dict:
     return summary
 
 
+def _persist_analysis_result(
+    result: dict,
+    *,
+    input_type: str,
+    input_hash: str,
+    filename: str,
+) -> int:
+    """Persist analysis outputs and emit audit + realtime notifications."""
+    global _last_results
+
+    init_run_store(app.instance_path)
+
+    summary_for_storage = {k: v for k, v in result.items() if k != "all_results"}
+    run_id = save_run(
+        app.instance_path,
+        username=current_user.username,
+        input_type=input_type,
+        input_hash=input_hash,
+        filename=filename,
+        summary_json=json.dumps(summary_for_storage, default=str),
+    )
+
+    records_to_save = []
+    for rec in result.get("all_results", []):
+        model_scores = {
+            m: rec.get(f"score_{m}")
+            for m in ("isolation_forest", "lof", "ocsvm", "autoencoder")
+            if rec.get(f"score_{m}") is not None
+        }
+        records_to_save.append({
+            "ip_address": rec.get("ip_address"),
+            "hour_bucket": rec.get("hour_bucket"),
+            "features": {
+                col: rec.get(col)
+                for col in _FEATURE_COLUMNS
+                if col in rec
+            },
+            "anomaly_score": rec.get("anomaly_score"),
+            "is_anomaly": rec.get("is_anomaly"),
+            "ensemble_score": rec.get("ensemble_score"),
+            "model_scores": model_scores,
+            "ensemble_label": rec.get("ensemble_label"),
+            "explanations": (
+                json.loads(rec["explanations_json"])
+                if rec.get("explanations_json")
+                else {}
+            ),
+        })
+    save_results(app.instance_path, run_id, records_to_save)
+
+    chains = result.get("chains", [])
+    if chains:
+        save_chains(app.instance_path, run_id, chains)
+
+    results_summary = json.dumps(
+        {
+            "run_id": run_id,
+            "anomaly_count": result.get("anomaly_count"),
+            "total_requests": result.get("total_requests"),
+        },
+        sort_keys=True,
+    )
+    results_hash = hashlib.sha256(results_summary.encode()).hexdigest()
+    append_entry(
+        app.instance_path,
+        actor=current_user.username,
+        input_hash=input_hash,
+        results_hash=results_hash,
+    )
+
+    result["run_id"] = run_id
+    result["filename"] = filename
+    _last_results = result
+
+    try:
+        socketio.emit(
+            "new_analysis",
+            {
+                "run_id": run_id,
+                "username": current_user.username,
+                "anomaly_count": result.get("anomaly_count"),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            room="audit_room",
+        )
+    except Exception:
+        pass
+
+    try:
+        critical = [
+            r for r in result.get("top_anomalies", [])
+            if float(r.get("anomaly_score") or 0.0) >= 0.7
+        ]
+        notify_critical_anomalies(run_id, critical)
+    except Exception:
+        app.logger.warning("Slack notification failed for run %s", run_id, exc_info=True)
+
+    return run_id
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -676,92 +779,12 @@ def analyze():
 
         result = _analyse_df(raw_df)
         if "error" not in result:
-            # Build a compact summary (all_results omitted — large row-level data
-            # is already persisted in analysis_results table).
-            summary_for_storage = {
-                k: v for k, v in result.items() if k != "all_results"
-            }
-
-            # ── Persist the run ───────────────────────────────────────────
-            run_id = save_run(
-                app.instance_path,
-                username=current_user.username,
+            _persist_analysis_result(
+                result,
                 input_type=input_type,
                 input_hash=input_hash,
                 filename=filename,
-                summary_json=json.dumps(summary_for_storage, default=str),
             )
-
-            # Build records for DB insertion using the canonical feature column list
-            records_to_save = []
-            for rec in result.get("all_results", []):
-                model_scores = {
-                    m: rec.get(f"score_{m}")
-                    for m in ("isolation_forest", "lof", "ocsvm", "autoencoder")
-                    if rec.get(f"score_{m}") is not None
-                }
-                records_to_save.append({
-                    "ip_address": rec.get("ip_address"),
-                    "hour_bucket": rec.get("hour_bucket"),
-                    "features": {
-                        col: rec.get(col)
-                        for col in _FEATURE_COLUMNS  # from pipeline.feature_engineering
-                        if col in rec
-                    },
-                    "anomaly_score": rec.get("anomaly_score"),
-                    "is_anomaly": rec.get("is_anomaly"),
-                    "ensemble_score": rec.get("ensemble_score"),
-                    "model_scores": model_scores,
-                    "ensemble_label": rec.get("ensemble_label"),
-                    "explanations": (
-                        json.loads(rec["explanations_json"])
-                        if rec.get("explanations_json")
-                        else {}
-                    ),
-                })
-            save_results(app.instance_path, run_id, records_to_save)
-
-            # Save attack chains
-            chains = result.get("chains", [])
-            if chains:
-                save_chains(app.instance_path, run_id, chains)
-
-            # Compute results_hash for the ledger
-            results_summary = json.dumps(
-                {
-                    "run_id": run_id,
-                    "anomaly_count": result.get("anomaly_count"),
-                    "total_requests": result.get("total_requests"),
-                },
-                sort_keys=True,
-            )
-            results_hash = hashlib.sha256(results_summary.encode()).hexdigest()
-
-            append_entry(
-                app.instance_path,
-                actor=current_user.username,
-                input_hash=input_hash,
-                results_hash=results_hash,
-            )
-
-            result["run_id"] = run_id
-            result["filename"] = filename
-            _last_results = result
-
-            # Broadcast real-time notification to connected audit room clients
-            try:
-                socketio.emit(
-                    "new_analysis",
-                    {
-                        "run_id": run_id,
-                        "username": current_user.username,
-                        "anomaly_count": result.get("anomaly_count"),
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    },
-                    room="audit_room",
-                )
-            except Exception:
-                pass  # Non-fatal; don't break analysis if emit fails
 
         return jsonify(result)
 
@@ -769,6 +792,107 @@ def analyze():
         tb = traceback.format_exc()
         app.logger.error("Analysis error:\n%s", tb)
         return jsonify({"error": "Internal error during analysis.", "detail": tb}), 500
+
+
+# ---------------------------------------------------------------------------
+# Real-time ingestion + feedback endpoints
+# ---------------------------------------------------------------------------
+
+@app.route("/api/ingest", methods=["POST"])
+@login_required
+def api_ingest():
+    """
+    Ingest log lines in real-time via JSON.
+
+    Accepted JSON payload keys:
+    - ``log_line``: single log line string
+    - ``log_lines`` / ``logs``: list of log line strings
+    - ``log_text``: multiline log text
+    """
+    payload = request.get_json(silent=True) or {}
+    lines: list[str] = []
+
+    if isinstance(payload.get("log_line"), str):
+        lines.append(payload["log_line"])
+    if isinstance(payload.get("log_text"), str):
+        lines.extend(payload["log_text"].splitlines())
+    if isinstance(payload.get("log_lines"), list):
+        lines.extend(str(v) for v in payload["log_lines"])
+    if isinstance(payload.get("logs"), list):
+        lines.extend(str(v) for v in payload["logs"])
+
+    lines = [ln for ln in lines if ln and ln.strip()]
+    if not lines:
+        return jsonify({"error": "Provide log_line, log_lines/logs, or log_text."}), 400
+
+    raw_df = parse_log_lines(lines)
+    if raw_df.empty:
+        return jsonify({"error": "No valid log entries found in payload."}), 400
+
+    raw_text = "\n".join(lines).encode()
+    input_hash = hashlib.sha256(raw_text).hexdigest()
+    result = _analyse_df(raw_df)
+    if "error" in result:
+        return jsonify(result), 400
+
+    _persist_analysis_result(
+        result,
+        input_type="ingest",
+        input_hash=input_hash,
+        filename="realtime_ingest",
+    )
+    result["received"] = len(lines)
+    return jsonify(result), 201
+
+
+@app.route("/api/feedback", methods=["POST"])
+@login_required
+def api_submit_feedback():
+    """Create/update user feedback for an anomaly row candidate."""
+    payload = request.get_json(silent=True) or {}
+    run_id = payload.get("run_id")
+    ip_address = (payload.get("ip_address") or "").strip()
+    hour_bucket = (payload.get("hour_bucket") or "").strip()
+    feedback = (payload.get("feedback") or "").strip().lower()
+
+    if not isinstance(run_id, int):
+        return jsonify({"error": "run_id (integer) is required."}), 400
+    if not ip_address or not hour_bucket:
+        return jsonify({"error": "ip_address and hour_bucket are required."}), 400
+    if feedback not in ("confirmed", "false_positive"):
+        return jsonify({"error": "feedback must be 'confirmed' or 'false_positive'."}), 400
+    if get_run(app.instance_path, run_id) is None:
+        return jsonify({"error": "Run not found."}), 404
+
+    init_run_store(app.instance_path)
+    save_anomaly_feedback(
+        app.instance_path,
+        run_id=run_id,
+        ip_address=ip_address,
+        hour_bucket=hour_bucket,
+        username=current_user.username,
+        feedback=feedback,
+    )
+    key = f"{ip_address}|{hour_bucket}"
+    counts = get_feedback_counts(app.instance_path, run_id).get(
+        key, {"confirmed": 0, "false_positive": 0}
+    )
+    return jsonify({"ok": True, "key": key, "counts": counts})
+
+
+@app.route("/api/feedback/counts")
+@login_required
+def api_feedback_counts():
+    """Return per-anomaly feedback counts for a run."""
+    run_id_raw = request.args.get("run_id", "").strip()
+    try:
+        run_id = int(run_id_raw)
+    except ValueError:
+        return jsonify({"error": "run_id query parameter is required."}), 400
+    init_run_store(app.instance_path)
+    if get_run(app.instance_path, run_id) is None:
+        return jsonify({"error": "Run not found."}), 404
+    return jsonify({"run_id": run_id, "counts": get_feedback_counts(app.instance_path, run_id)})
 
 
 # ---------------------------------------------------------------------------

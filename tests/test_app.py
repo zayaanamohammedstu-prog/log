@@ -233,6 +233,57 @@ class TestRoutes:
         resp = client.get("/api/runs/99999/summary")
         assert resp.status_code == 404
 
+    def test_ingest_endpoint_accepts_log_lines(self, client):
+        payload = {
+            "log_lines": [
+                '10.0.0.1 - - [15/Jan/2024:08:00:00 +0000] "GET / HTTP/1.1" 200 100 "-" "Mozilla/5.0"',
+                '10.0.0.2 - - [15/Jan/2024:08:01:00 +0000] "POST /login HTTP/1.1" 401 120 "-" "Nikto/2.1.6"',
+            ]
+        }
+        resp = client.post(
+            "/api/ingest",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        assert resp.status_code == 201
+        data = json.loads(resp.data)
+        assert data["received"] == 2
+        assert "run_id" in data
+
+    def test_feedback_submit_and_counts(self, client):
+        analysis_resp = client.post(
+            "/api/analyze",
+            data=json.dumps({"use_sample": True}),
+            content_type="application/json",
+        )
+        assert analysis_resp.status_code == 200
+        analysis = json.loads(analysis_resp.data)
+        assert analysis.get("run_id") is not None
+        assert analysis.get("top_anomalies")
+
+        first = analysis["top_anomalies"][0]
+        feedback_resp = client.post(
+            "/api/feedback",
+            data=json.dumps(
+                {
+                    "run_id": analysis["run_id"],
+                    "ip_address": first.get("ip_address"),
+                    "hour_bucket": first.get("hour_bucket"),
+                    "feedback": "false_positive",
+                }
+            ),
+            content_type="application/json",
+        )
+        assert feedback_resp.status_code == 200
+        feedback_data = json.loads(feedback_resp.data)
+        assert feedback_data.get("ok") is True
+
+        counts_resp = client.get(f"/api/feedback/counts?run_id={analysis['run_id']}")
+        assert counts_resp.status_code == 200
+        counts_data = json.loads(counts_resp.data)
+        key = f"{first.get('ip_address')}|{first.get('hour_bucket')}"
+        assert counts_data["counts"][key]["false_positive"] >= 1
+
     def test_history_list(self, client):
         """After running analyses, /api/runs should list them."""
         client.post(
@@ -248,4 +299,3 @@ class TestRoutes:
         # Runs listing should not include summary_json (too large)
         for run in data["runs"]:
             assert "summary_json" not in run
-

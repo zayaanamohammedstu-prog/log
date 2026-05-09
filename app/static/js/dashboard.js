@@ -95,6 +95,7 @@ let _sortCol        = "anomaly_score";
 let _sortAsc        = false;
 let _lastRunId      = null;
 let _chains         = [];
+let _feedbackCounts = {};
 
 // ============================================================
 // UTILITY FUNCTIONS
@@ -132,6 +133,16 @@ function yesNo(val) {
 
 function pct(val) {
   return ((val || 0) * 100).toFixed(1) + "%";
+}
+
+function feedbackKey(ipAddress, hourBucket) {
+  return `${ipAddress || ""}|${hourBucket || ""}`;
+}
+
+function feedbackSummary(row) {
+  const key = feedbackKey(row.ip_address, row.hour_bucket);
+  const counts = _feedbackCounts[key] || { confirmed: 0, false_positive: 0 };
+  return `<span class="feedback-counts">C:${counts.confirmed || 0} · FP:${counts.false_positive || 0}</span>`;
 }
 
 // ============================================================
@@ -645,7 +656,7 @@ function renderTable(rows) {
   const page   = filtered.slice(start, start + _pageSize);
 
   const tbody = document.getElementById("anomalyBody");
-  const colCount = 12;
+  const colCount = 13;
 
   if (filtered.length === 0) {
     tbody.innerHTML = `<tr><td colspan="${colCount}" class="placeholder">No anomalies match the current filter.</td></tr>`;
@@ -664,9 +675,25 @@ function renderTable(rows) {
         <td>${yesNo(r.is_off_hours)}</td>
         <td>${r.has_scanner_ua ? '<span class="badge badge-danger">YES</span>' : '<span style="color:var(--text-muted)">—</span>'}</td>
         <td><span class="badge badge-${risk === "critical" ? "critical" : risk === "high" ? "danger" : risk === "medium" ? "warn" : "ok"}">${riskLabel(r.anomaly_score)}</span></td>
+        <td class="feedback-cell">
+          <div class="feedback-actions">
+            <button class="btn btn-secondary btn-sm feedback-btn" data-feedback="confirmed" data-idx="${start + i}">✅ Confirm</button>
+            <button class="btn btn-secondary btn-sm feedback-btn" data-feedback="false_positive" data-idx="${start + i}">⚠️ False Positive</button>
+          </div>
+          ${feedbackSummary(r)}
+        </td>
         <td><button class="btn btn-secondary btn-sm drill-btn" data-idx="${start + i}" style="padding:3px 8px;font-size:.75rem;">🔍 Drill</button></td>
       </tr>`;
     }).join("");
+
+    tbody.querySelectorAll(".feedback-btn").forEach(btn => {
+      btn.addEventListener("click", async e => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.idx, 10);
+        const feedback = btn.dataset.feedback;
+        await submitFeedback(filtered[idx], feedback);
+      });
+    });
 
     // Attach drill-down listeners
     tbody.querySelectorAll(".drill-btn").forEach(btn => {
@@ -1065,6 +1092,7 @@ function renderResults(data) {
   renderCards(data);
   renderAllCharts(data);
   renderTable(_allAnomalies);
+  loadFeedbackCounts(_lastRunId);
   renderEvidence(data);
   renderChains(data.chains);
   renderProfiles(data.behavioral_profiles);
@@ -1334,6 +1362,64 @@ async function apiFetch(url, options = {}) {
     return null;
   }
   return resp;
+}
+
+async function loadFeedbackCounts(runId) {
+  if (!runId) {
+    _feedbackCounts = {};
+    return;
+  }
+  try {
+    const resp = await apiFetch(`/api/feedback/counts?run_id=${encodeURIComponent(runId)}`);
+    if (!resp || !resp.ok) {
+      _feedbackCounts = {};
+      return;
+    }
+    const data = await resp.json();
+    _feedbackCounts = data.counts || {};
+    renderTable(_allAnomalies);
+  } catch (_) {
+    _feedbackCounts = {};
+  }
+}
+
+async function submitFeedback(row, feedback) {
+  if (!_lastRunId || !row) {
+    showToast("Run an analysis first before submitting feedback.", "error");
+    return;
+  }
+  if (feedback !== "confirmed" && feedback !== "false_positive") {
+    showToast("Invalid feedback option.", "error");
+    return;
+  }
+
+  try {
+    const resp = await apiFetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        run_id: _lastRunId,
+        ip_address: row.ip_address,
+        hour_bucket: row.hour_bucket,
+        feedback,
+      }),
+    });
+    if (!resp) return;
+    const data = await resp.json();
+    if (!resp.ok || data.error) {
+      showToast(data.error || "Failed to submit feedback.", "error");
+      return;
+    }
+    if (data.key && data.counts) _feedbackCounts[data.key] = data.counts;
+    renderTable(_allAnomalies);
+    showToast(
+      feedback === "confirmed" ? "Marked as confirmed anomaly." : "Marked as false positive.",
+      "success",
+      1800,
+    );
+  } catch (err) {
+    showToast("Feedback request failed: " + err.message, "error");
+  }
 }
 
 async function runAnalysis(body, headers = {}) {
@@ -1676,5 +1762,3 @@ function showSendStatus(message, type) {
   el.textContent = message;
   el.className = `send-modal-status status-${type}`;
 }
-
-

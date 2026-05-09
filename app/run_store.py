@@ -55,6 +55,19 @@ def init_run_store(instance_path: str) -> None:
                 chain_json TEXT    NOT NULL,
                 FOREIGN KEY (run_id) REFERENCES analysis_runs(id)
             );
+
+            CREATE TABLE IF NOT EXISTS anomaly_feedback (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id         INTEGER NOT NULL,
+                ip_address     TEXT    NOT NULL,
+                hour_bucket    TEXT    NOT NULL,
+                username       TEXT    NOT NULL,
+                feedback       TEXT    NOT NULL CHECK (feedback IN ('confirmed', 'false_positive')),
+                created_at     TEXT    NOT NULL,
+                updated_at     TEXT    NOT NULL,
+                FOREIGN KEY (run_id) REFERENCES analysis_runs(id),
+                UNIQUE(run_id, ip_address, hour_bucket, username)
+            );
             """
         )
         conn.commit()
@@ -246,5 +259,61 @@ def get_chain(instance_path: str, run_id: int, chain_id: int) -> dict | None:
         chain = json.loads(row["chain_json"])
         chain["id"] = row["id"]
         return chain
+    finally:
+        conn.close()
+
+
+def save_anomaly_feedback(
+    instance_path: str,
+    run_id: int,
+    ip_address: str,
+    hour_bucket: str,
+    username: str,
+    feedback: str,
+) -> None:
+    """Create or update one user's feedback for one anomaly candidate row."""
+    if feedback not in ("confirmed", "false_positive"):
+        raise ValueError("feedback must be 'confirmed' or 'false_positive'")
+
+    ts = datetime.now(timezone.utc).isoformat()
+    conn = sqlite3.connect(_db_path(instance_path))
+    try:
+        conn.execute(
+            """
+            INSERT INTO anomaly_feedback
+                (run_id, ip_address, hour_bucket, username, feedback, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_id, ip_address, hour_bucket, username)
+            DO UPDATE SET
+                feedback = excluded.feedback,
+                updated_at = excluded.updated_at
+            """,
+            (run_id, ip_address, hour_bucket, username, feedback, ts, ts),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_feedback_counts(instance_path: str, run_id: int) -> dict[str, dict[str, int]]:
+    """Return feedback counts grouped by anomaly key (ip|hour_bucket) for a run."""
+    conn = sqlite3.connect(_db_path(instance_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT ip_address, hour_bucket, feedback, COUNT(*) AS cnt
+            FROM anomaly_feedback
+            WHERE run_id = ?
+            GROUP BY ip_address, hour_bucket, feedback
+            """,
+            (run_id,),
+        ).fetchall()
+        out: dict[str, dict[str, int]] = {}
+        for row in rows:
+            key = f"{row['ip_address']}|{row['hour_bucket']}"
+            bucket = out.setdefault(key, {"confirmed": 0, "false_positive": 0})
+            bucket[row["feedback"]] = int(row["cnt"])
+        return out
     finally:
         conn.close()
