@@ -11,6 +11,10 @@ import io
 import json
 import textwrap
 
+# Keep report risk labels aligned with UI copy:
+# Critical risk is classified at ensemble/anomaly score >= 0.85.
+_CRITICAL_THRESHOLD = 0.85
+
 
 def generate_html_report(
     run: dict,
@@ -47,7 +51,7 @@ def generate_html_report(
     critical_count = sum(
         1
         for r in results
-        if (r.get("ensemble_score") or r.get("anomaly_score") or 0.0) >= 0.7
+        if (r.get("ensemble_score") or r.get("anomaly_score") or 0.0) >= _CRITICAL_THRESHOLD
     )
     chain_count = len(chains)
 
@@ -293,7 +297,7 @@ def generate_pdf_report(
     critical_count = sum(
         1
         for r in results
-        if (r.get("ensemble_score") or r.get("anomaly_score") or 0.0) >= 0.7
+        if (r.get("ensemble_score") or r.get("anomaly_score") or 0.0) >= _CRITICAL_THRESHOLD
     )
     chain_count = len(chains)
 

@@ -495,24 +495,28 @@ def update_user_profile(
     email: str | None = None,
 ) -> bool:
     """Update mutable profile fields for a user."""
-    updates = []
-    params: list[object] = []
-    if display_name is not None:
-        updates.append("display_name = ?")
-        params.append(display_name.strip())
-    if email is not None:
-        updates.append("email = ?")
-        params.append(email.strip())
-    if not updates:
+    has_display_name = display_name is not None
+    has_email = email is not None
+    if not has_display_name and not has_email:
         return False
-    params.append(user_id)
 
     conn = sqlite3.connect(_db_path(instance_path))
     try:
-        cur = conn.execute(
-            f"UPDATE users SET {', '.join(updates)} WHERE id = ? AND deleted_at IS NULL",
-            params,
-        )
+        if has_display_name and has_email:
+            cur = conn.execute(
+                "UPDATE users SET display_name = ?, email = ? WHERE id = ? AND deleted_at IS NULL",
+                (display_name.strip(), email.strip(), user_id),
+            )
+        elif has_display_name:
+            cur = conn.execute(
+                "UPDATE users SET display_name = ? WHERE id = ? AND deleted_at IS NULL",
+                (display_name.strip(), user_id),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE users SET email = ? WHERE id = ? AND deleted_at IS NULL",
+                (email.strip(), user_id),
+            )
         conn.commit()
         return cur.rowcount > 0
     finally:

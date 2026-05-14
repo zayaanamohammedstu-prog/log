@@ -427,6 +427,64 @@ class TestRegistration:
         assert resp.status_code == 200
         assert b"3 characters" in resp.data
 
+    def test_api_register_requires_email_for_non_first_user(self, tmp_instance, client, monkeypatch):
+        """API registration requires email when at least one user already exists."""
+        create_user(tmp_instance, "existing_admin", "adminpass", role="admin")
+        monkeypatch.setattr("app.app.send_verification_email", lambda *args, **kwargs: None)
+        resp = client.post(
+            "/api/auth/register",
+            data=json.dumps({"username": "newauditor", "password": "password1", "user_type": "auditor"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 400
+        data = json.loads(resp.data)
+        assert "Email is required" in data["error"]
+
+    def test_api_register_sets_verification_pending_and_token(self, tmp_instance, client, monkeypatch):
+        """API registration should create email-verification-pending users and issue a verify token."""
+        from app.db import get_user_by_username
+
+        create_user(tmp_instance, "existing_admin", "adminpass", role="admin")
+        monkeypatch.setattr("app.app.send_verification_email", lambda *args, **kwargs: None)
+        resp = client.post(
+            "/api/auth/register",
+            data=json.dumps({
+                "username": "verifyme",
+                "password": "password1",
+                "email": "verify@example.com",
+                "user_type": "auditor",
+            }),
+            content_type="application/json",
+        )
+        assert resp.status_code == 201
+        data = json.loads(resp.data)
+        assert "verify your email" in data["message"].lower()
+        row = get_user_by_username(tmp_instance, "verifyme")
+        assert row is not None
+        assert row["status"] == "email_verification_pending"
+        assert row["verify_token"]
+
+
+class TestAccountSettings:
+    def test_get_account_profile(self, admin_client):
+        """Logged-in users can fetch profile information."""
+        resp = admin_client.get("/api/account/profile")
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert "profile" in data
+        assert data["profile"]["username"] == "testadmin"
+
+    def test_update_account_password(self, admin_client):
+        """Logged-in users can update password with current password verification."""
+        resp = admin_client.post(
+            "/api/account/password",
+            data=json.dumps({"current_password": "adminpass", "new_password": "newpass123"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert data["ok"] is True
+
 
 # ---------------------------------------------------------------------------
 # Admin recovery (bootstrap) tests

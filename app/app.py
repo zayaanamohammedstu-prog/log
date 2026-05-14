@@ -684,6 +684,18 @@ def _run_access_denied(run: dict) -> bool:
     return _is_auditor_role() and run.get("username") != current_user.username
 
 
+def _status_blocking_message(status: str) -> str | None:
+    """Return a login-blocking message for account status, else None."""
+    norm = (status or "active").strip().lower()
+    if norm == "email_verification_pending":
+        return "Please verify your email before admin approval."
+    if norm == "pending":
+        return "Account pending approval."
+    if norm == "suspended":
+        return "Account suspended."
+    return None
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     """Self-service registration.  Only accessible when signup is allowed."""
@@ -760,12 +772,9 @@ def login():
         if row and verify_password(row["password"], password):
             # Check user status before allowing login
             status = row.get("status", "active") or "active"
-            if status == "email_verification_pending":
-                error = "Please verify your email before admin approval."
-            elif status == "pending":
-                error = "Account pending approval."
-            elif status == "suspended":
-                error = "Account suspended."
+            error = _status_blocking_message(status)
+            if error:
+                pass
             else:
                 user = User(row)
                 login_user(user)
@@ -1174,8 +1183,8 @@ def api_send_email(run_id: int):
         filename, mime_type, attachment_bytes = _build_report_attachment(run, results, chains, report_format)
     except ImportError:
         return jsonify({"error": "PDF generation requires the 'fpdf2' package."}), 500
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    except ValueError:
+        return jsonify({"error": "Unsupported format. Use one of: pdf, html, csv, json."}), 400
 
     try:
         send_report_email(
@@ -1418,12 +1427,9 @@ def api_login():
     if not row or not verify_password(row["password"], password):
         return jsonify({"error": "Invalid username or password."}), 401
     status = row.get("status", "active") or "active"
-    if status == "email_verification_pending":
-        return jsonify({"error": "Please verify your email before admin approval."}), 403
-    if status == "pending":
-        return jsonify({"error": "Account pending approval."}), 403
-    if status == "suspended":
-        return jsonify({"error": "Account suspended."}), 403
+    blocking = _status_blocking_message(status)
+    if blocking:
+        return jsonify({"error": blocking}), 403
     identity = str(row["id"])
     access_token = create_access_token(identity=identity)
     refresh_token = create_refresh_token(identity=identity)
@@ -1481,12 +1487,12 @@ def api_register():
         return jsonify({"error": "Username must be at least 3 characters."}), 400
     if len(password) < 6:
         return jsonify({"error": "Password must be at least 6 characters."}), 400
+    if count_users(app.instance_path) > 0 and not email:
+        return jsonify({"error": "Email is required to register and verify your account."}), 400
     if get_user_by_username(app.instance_path, username):
         return jsonify({"error": f"Username '{username}' already exists."}), 409
     if email and get_user_by_email(app.instance_path, email):
         return jsonify({"error": "An account with that email already exists."}), 409
-    if count_users(app.instance_path) > 0 and not email:
-        return jsonify({"error": "Email is required to register and verify your account."}), 400
 
     verification_token = secrets.token_urlsafe(32) if email else None
     if count_users(app.instance_path) == 0:
@@ -1507,9 +1513,9 @@ def api_register():
         verify_url = url_for("verify_email", token=verification_token, _external=True)
         try:
             send_verification_email(email, verify_url)
-        except MailerError as exc:
-            app.logger.warning("Verification email send failed for user %s: %s", username, exc)
-            return jsonify({"error": f"Could not send verification email: {exc}"}), 500
+        except MailerError:
+            app.logger.warning("Verification email send failed for user %s", username, exc_info=True)
+            return jsonify({"error": "Could not send verification email."}), 500
     message = (
         "Registration successful. Please verify your email to move to admin approval."
         if status == "email_verification_pending"
@@ -1519,7 +1525,7 @@ def api_register():
         "id": new_id,
         "username": username,
         "role": role,
-        "status": ("pending" if status == "email_verification_pending" else status),
+        "status": status,
         "message": message,
     }), 201
 
@@ -1646,9 +1652,12 @@ def api_account_upload_avatar():
     if size > 2 * 1024 * 1024:
         return jsonify({"error": "Avatar file size must be <= 2MB."}), 400
 
+    existing_profile = get_user_profile(app.instance_path, current_user.id) or {}
+    existing_avatar_url = (existing_profile.get("avatar_url") or "").strip()
+
     avatars_dir = os.path.join(app.static_folder, "uploads", "avatars")
     os.makedirs(avatars_dir, exist_ok=True)
-    stored_name = f"user_{current_user.id}_{secrets.token_hex(8)}{ext}"
+    stored_name = f"avatar_{secrets.token_hex(16)}{ext}"
     abs_path = os.path.join(avatars_dir, stored_name)
     f.save(abs_path)
 
@@ -1656,6 +1665,13 @@ def api_account_upload_avatar():
     ok = update_user_avatar(app.instance_path, current_user.id, avatar_url)
     if not ok:
         return jsonify({"error": "Failed to save avatar reference."}), 500
+    if existing_avatar_url.startswith("/static/uploads/avatars/"):
+        old_file = os.path.join(app.static_folder, existing_avatar_url.removeprefix("/static/"))
+        if os.path.isfile(old_file):
+            try:
+                os.remove(old_file)
+            except OSError:
+                app.logger.warning("Failed removing old avatar for user %s", current_user.id, exc_info=True)
     profile = get_user_profile(app.instance_path, current_user.id)
     return jsonify({"ok": True, "avatar_url": avatar_url, "profile": profile})
 

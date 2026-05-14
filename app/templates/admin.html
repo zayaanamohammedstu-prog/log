@@ -201,11 +201,8 @@
           <button onclick="toggleUserMenu()" class="flex items-center gap-3 bg-gray-800/50 border border-gray-700 rounded-xl px-3 py-1.5 hover:bg-gray-800 transition-all group">
             <div class="relative">
               <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-sm font-bold shadow-md overflow-hidden">
-                {% if user.avatar_url %}
-                <img src="{{ user.avatar_url }}" alt="avatar" class="w-full h-full object-cover" />
-                {% else %}
-                {{ user.username[0]|upper }}
-                {% endif %}
+                <img id="topbarAvatarImg" src="{{ user.avatar_url }}" alt="avatar" class="w-full h-full object-cover {% if not user.avatar_url %}hidden{% endif %}" />
+                <span id="topbarAvatarFallback" class="{% if user.avatar_url %}hidden{% endif %}">{{ user.username[0]|upper }}</span>
               </div>
               <div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-gray-900"></div>
             </div>
@@ -221,11 +218,8 @@
             <div class="p-3 border-b border-gray-800">
               <div class="flex items-center gap-3">
                 <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center font-bold overflow-hidden">
-                  {% if user.avatar_url %}
-                  <img src="{{ user.avatar_url }}" alt="avatar" class="w-full h-full object-cover" />
-                  {% else %}
-                  {{ user.username[0]|upper }}
-                  {% endif %}
+                  <img id="dropdownAvatarImg" src="{{ user.avatar_url }}" alt="avatar" class="w-full h-full object-cover {% if not user.avatar_url %}hidden{% endif %}" />
+                  <span id="dropdownAvatarFallback" class="{% if user.avatar_url %}hidden{% endif %}">{{ user.username[0]|upper }}</span>
                 </div>
                 <div>
                   <div class="font-semibold">{{ user.username }}</div>
@@ -509,11 +503,8 @@
     <form id="profileForm" class="space-y-4" onsubmit="saveProfileSettings(event)">
       <div class="text-center mb-2">
       <div id="profileAvatarWrap" class="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-4xl font-bold mx-auto mb-3 overflow-hidden">
-        {% if user.avatar_url %}
-        <img id="profileAvatarImg" src="{{ user.avatar_url }}" alt="avatar" class="w-full h-full object-cover" />
-        {% else %}
-        <span id="profileAvatarText">{{ user.username[0]|upper }}</span>
-        {% endif %}
+        <img id="profileAvatarImg" src="{{ user.avatar_url }}" alt="avatar" class="w-full h-full object-cover {% if not user.avatar_url %}hidden{% endif %}" />
+        <span id="profileAvatarText" class="{% if user.avatar_url %}hidden{% endif %}">{{ user.username[0]|upper }}</span>
       </div>
       </div>
       <div>
@@ -624,6 +615,7 @@ function toggleTheme() {
 // Notifications - Working
 var notifications = [];
 var socketRef = null;
+var AVATAR_REFRESH_DELAY_MS = 600; // wait briefly so static file is ready before reload
 
 function showNotifications() {
   if (!notifications.length) {
@@ -663,10 +655,15 @@ async function loadProfileSettings() {
   try {
     const res = await fetch('/api/account/profile');
     const data = await res.json();
-    if (!res.ok || !data.profile) return;
+    if (!res.ok || !data.profile) {
+      showToast((data && data.error) || 'Failed to load profile settings.', 'error');
+      return;
+    }
     document.getElementById('profileDisplayName').value = data.profile.display_name || data.profile.username || '';
     document.getElementById('profileEmail').value = data.profile.email || '';
-  } catch (_) {}
+  } catch (_) {
+    showToast('Failed to load profile settings.', 'error');
+  }
 }
 
 async function saveProfileSettings(event) {
@@ -695,7 +692,26 @@ async function saveProfileSettings(event) {
       showToast(aData.error || 'Profile updated, but avatar upload failed.', 'warning');
     } else {
       showToast('Profile and avatar updated successfully.', 'success');
-      setTimeout(function() { window.location.reload(); }, 600);
+      const avatarUrl = aData.avatar_url || '';
+      if (avatarUrl) {
+        const cacheBust = avatarUrl + '?v=' + Date.now();
+        const topImg = document.getElementById('topbarAvatarImg');
+        const dropImg = document.getElementById('dropdownAvatarImg');
+        const profileImg = document.getElementById('profileAvatarImg');
+        const topFallback = document.getElementById('topbarAvatarFallback');
+        const dropFallback = document.getElementById('dropdownAvatarFallback');
+        const profileFallback = document.getElementById('profileAvatarText');
+        if (topImg) topImg.src = cacheBust;
+        if (dropImg) dropImg.src = cacheBust;
+        if (profileImg) profileImg.src = cacheBust;
+        if (topImg) topImg.classList.remove('hidden');
+        if (dropImg) dropImg.classList.remove('hidden');
+        if (profileImg) profileImg.classList.remove('hidden');
+        if (topFallback) topFallback.classList.add('hidden');
+        if (dropFallback) dropFallback.classList.add('hidden');
+        if (profileFallback) profileFallback.classList.add('hidden');
+      }
+      setTimeout(function() { closeProfileSettings(); }, AVATAR_REFRESH_DELAY_MS);
       return;
     }
   } else {
@@ -1005,7 +1021,10 @@ if (!isForbidden) {
       loadStats();
       loadPending();
     });
-  } catch (_) {}
+  } catch (err) {
+    showToast('Realtime notifications unavailable right now.', 'warning');
+    if (window && window.console) console.warn('Socket connection failed:', err);
+  }
 }
 </script>
 <div class="fixed right-4 bottom-4 z-40 flex flex-col gap-2">
