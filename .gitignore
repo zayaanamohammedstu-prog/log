@@ -16,6 +16,9 @@ venv/
 env/
 .env/
 
+# Environment variable file (contains credentials – never commit)
+.env
+
 # Trained model files (generated at runtime; do not commit)
 model/*.pkl
 model/*.joblib

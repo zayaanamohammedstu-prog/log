@@ -6,6 +6,64 @@ anomalous behaviour, and present a prioritised risk dashboard to IT auditors.
 
 ---
 
+## 🚀 Getting Started
+
+### New to LogGuard? Start here!
+
+**Step 1 — Clone and install dependencies**
+
+```bash
+git clone https://github.com/zayaanamohammedstu-prog/log.git
+cd log
+pip install -r requirements.txt
+```
+
+**Step 2 — Run the interactive setup wizard**
+
+```bash
+python scripts/setup.py
+```
+
+The setup wizard guides you through creating your first admin account and
+configuring the key environment variables. You can also skip this step and
+follow the manual instructions in the [Quick Start](#quick-start) section below.
+
+**Step 3 — Start the server**
+
+```bash
+python -m flask --app app/app.py run
+```
+
+Then open **http://localhost:5000** in your browser.
+On your very first login you will be greeted by a **Welcome Tour** modal that
+explains the main features. Dismiss it whenever you are ready to start working.
+
+**Step 4 — Analyse logs**
+
+- In the dashboard, click **"Analyse sample logs"** to run the bundled demo
+  dataset instantly.
+- Or drag-and-drop / upload your own Apache CLF log file.
+
+---
+
+## ❓ How to Use the System
+
+| Action | Where |
+|--------|-------|
+| Upload a log file | Drag-and-drop onto the dashboard, or click **Choose File** |
+| Run demo data | Click the **"Analyse sample logs"** button on the Overview tab |
+| View anomalies | Switch to the **Anomaly Explorer** tab |
+| See full explanation | Click any row in the Anomaly Explorer table to open the **drill-down panel** |
+| Download a report | Go to **Evidence & Reports** → **Download HTML Report** or **📥 Download PDF** |
+| Email / WhatsApp a report | Use the **Send Report** buttons in the **Export & Visualise** tab |
+| Manage users | Admin users can open the **Admin** tab in the sidebar |
+| Open in-app help | Click the **❓ Help** button at the bottom of the sidebar |
+
+> **In-app help:** After logging in, click the **❓ Help** button in the
+> sidebar at any time to reopen the quick-reference guide.
+
+---
+
 ## Features
 
 | Layer | Technology |
@@ -393,6 +451,42 @@ The anomaly detection pipeline:
 
 The trained model is serialised to `model/logguard_model.pkl` after the first
 run and reused on subsequent requests.
+
+---
+
+## Onboarding & Help Features
+
+### Interactive Setup Wizard
+
+Run the CLI setup wizard at any time to be guided through first-time
+configuration:
+
+```bash
+python scripts/setup.py
+```
+
+The wizard will:
+1. Detect whether a `.env` file already exists.
+2. Ask for your desired admin username and password.
+3. Optionally configure a Flask secret key, SMTP credentials for email
+   sending, and Slack webhook URL.
+4. Write the values to a `.env` file ready for use with `python-dotenv`.
+
+### In-App Help Panel
+
+After logging in, click the **❓ Help** button at the bottom of the left
+sidebar to open the help panel. It summarises:
+- The main dashboard tabs and what each one does.
+- How to upload and analyse log files.
+- How to export and share reports.
+- Links to the relevant README sections for deeper documentation.
+
+### Welcome Tour Modal
+
+On your **first login** a dismissible welcome modal is shown automatically.
+It highlights the key features and links to the help panel. LogGuard stores a
+flag in your browser's `localStorage` so the modal is only shown once per
+device. You can reopen it at any time via the **❓ Help** button.
 
 ---
 
