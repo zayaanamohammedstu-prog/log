@@ -182,7 +182,7 @@ def main() -> None:
     for key, value in config.items():
         # Use json.dumps to produce a properly escaped double-quoted string
         # whenever the value contains whitespace or shell-special characters.
-        if any(c in value for c in (' ', '#', '"', "'", '\\', '$', '`')):
+        if any(c in value for c in (' ', '#', '"', "'", '\\', '$', '`', '\n', '\t')):
             value = json.dumps(value)
         lines.append(f"{key}={value}")
     lines.append("")

@@ -1795,7 +1795,7 @@ function closeWelcomeModal() {
   if (overlay) overlay.classList.remove("open");
   if (checkbox && checkbox.checked) {
     try { localStorage.setItem(getWelcomedKey(), "1"); } catch (e) {
-      console.warn("LogGuard: could not save welcome-seen state to localStorage – the welcome modal may appear again next visit.", e);
+      console.warn("LogGuard: could not save welcome-seen state to localStorage - the welcome modal may appear again next visit.", e);
     }
   }
 }
@@ -1806,7 +1806,7 @@ function maybeShowWelcome() {
       openWelcomeModal();
     }
   } catch (e) {
-    console.warn("LogGuard: localStorage is unavailable – showing welcome modal by default.", e);
+    console.warn("LogGuard: localStorage is unavailable - showing welcome modal by default.", e);
     openWelcomeModal();
   }
 }
