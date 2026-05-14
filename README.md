@@ -59,6 +59,9 @@ logguard/
 
 See also: [`ROADMAP.md`](ROADMAP.md) for role flows, UI map, key files, and contribution guidance.
 
+> Looking for enhancement priorities?  
+> See the **"Audit workflow optimization roadmap (gap-only)"** section in `ROADMAP.md`, which excludes already-implemented features and keeps real-time streaming as deferred scope with an extensible adapter approach.
+
 ---
 
 ## Quick Start

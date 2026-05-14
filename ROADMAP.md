@@ -35,3 +35,45 @@
 3. Run targeted checks before pushing (backend tests and affected UI verification).
 4. Keep UI text concise and role-aware.
 5. Update `README.md`/`ROADMAP.md` if flows or endpoints change.
+
+## Audit workflow optimization roadmap (gap-only)
+
+This section intentionally **ignores capabilities already present** in LogGuard (XAI explanations, alert delivery integrations, PDF/HTML reporting, RBAC roles, feedback capture, Docker support, and near-real-time `/api/ingest` endpoint).
+
+### Scope note: real-time streaming
+- **Out of scope for the current implementation cycle.**
+- Keep ingestion extensible so Kafka/RabbitMQ/Redis Streams connectors can be added later without reworking core analysis routes.
+- Preferred approach: add a transport adapter layer that normalizes stream events into the existing `api_ingest` payload shape.
+
+### Prioritized backlog (missing/high-value)
+
+#### P0 (must-have)
+1. **Risk scoring framework (weighted)**
+   - Combine model score with asset criticality, access timing, and privilege context.
+   - Output consistent severity and priority ordering for triage.
+2. **Case management workflow**
+   - Auto-create investigation cases from critical anomalies.
+   - Add status lifecycle (`open`, `investigating`, `resolved`, `false_positive`) and ownership.
+3. **Historical trend analysis**
+   - Add period-over-period anomaly trend views and recurring source/endpoint tracking.
+
+#### P1 (should-have)
+1. **Multi-log parser architecture**
+   - Introduce pluggable parser interfaces for Nginx, IIS, syslog, firewall, and DB logs.
+2. **Compliance mapping module**
+   - Map anomaly classes to configurable control references (GDPR/SOX/PCI-DSS).
+3. **Retraining governance improvements**
+   - Extend existing retraining flow with drift thresholds and alerting on model degradation.
+
+#### P2 (nice-to-have)
+1. **Cloud deployment profiles**
+   - Optional AWS/Azure/GCP reference stacks for scale-out and archival.
+2. **On-prem lightweight packaging**
+   - Harden single-node mode for constrained environments with minimal external dependencies.
+
+### Suggested delivery sequence
+1. Risk scoring foundations
+2. Case management data model + APIs
+3. Trend analytics views
+4. Parser plugin abstraction
+5. Compliance mapping and retraining governance enhancements
