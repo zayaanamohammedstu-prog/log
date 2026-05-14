@@ -51,6 +51,11 @@
         <span id="sidebarThemeLabel">Light Mode</span>
       </a>
     </li>
+    <li>
+      <a href="#" id="sidebarHelpBtn" onclick="openHelpModal(); return false;">
+        <span class="nav-icon">❓</span> Help
+      </a>
+    </li>
   </ul>
 
   <div class="sidebar-footer">
@@ -712,5 +717,110 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+
+<!-- =================== WELCOME MODAL =================== -->
+<div class="welcome-overlay" id="welcomeOverlay" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
+  <div class="welcome-modal">
+    <div class="welcome-header">
+      <span class="welcome-logo">🛡</span>
+      <div>
+        <h2 class="welcome-title" id="welcomeTitle">Welcome to LogGuard!</h2>
+        <p class="welcome-subtitle">Your AI-powered IT Audit Workbench</p>
+      </div>
+    </div>
+    <div class="welcome-body">
+      <p class="welcome-intro">
+        Hi <strong>{{ user.username }}</strong>, great to have you here!
+        Here is a quick overview of what you can do:
+      </p>
+      <ul class="welcome-steps">
+        <li><span class="welcome-step-icon">📂</span>
+          <div><strong>Upload logs</strong> — Drop or select an Apache CLF log file on the <em>Overview</em> tab, or click <em>"Analyse sample logs"</em> to try the demo dataset.</div>
+        </li>
+        <li><span class="welcome-step-icon">🔍</span>
+          <div><strong>Explore anomalies</strong> — The <em>Anomaly Explorer</em> tab lists every suspicious IP/hour bucket. Click any row for a detailed ML explanation.</div>
+        </li>
+        <li><span class="welcome-step-icon">📋</span>
+          <div><strong>Download reports</strong> — Generate HTML or PDF audit reports from the <em>Evidence &amp; Reports</em> tab and share them via email or WhatsApp.</div>
+        </li>
+        <li><span class="welcome-step-icon">❓</span>
+          <div><strong>Need help?</strong> — Click the <em>❓ Help</em> button in the sidebar at any time to reopen this guide.</div>
+        </li>
+      </ul>
+    </div>
+    <div class="welcome-footer">
+      <label class="welcome-no-show">
+        <input type="checkbox" id="welcomeDontShow" /> Don't show again on this device
+      </label>
+      <button class="btn btn-primary" id="welcomeGetStarted">Get Started →</button>
+    </div>
+  </div>
+</div>
+
+<!-- =================== HELP MODAL =================== -->
+<div class="help-overlay" id="helpOverlay" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+  <div class="help-modal">
+    <div class="help-header">
+      <h2 class="help-title" id="helpTitle">❓ LogGuard Help</h2>
+      <button class="drill-close-btn" id="helpClose" aria-label="Close help">✕</button>
+    </div>
+    <div class="help-body">
+      <section class="help-section">
+        <h3>Getting Started</h3>
+        <ol class="help-list">
+          <li>Install dependencies: <code>pip install -r requirements.txt</code></li>
+          <li>Run the setup wizard: <code>python scripts/setup.py</code></li>
+          <li>Start the server: <code>python -m flask --app app/app.py run</code></li>
+          <li>Open <strong>http://localhost:5000</strong> in your browser and sign in.</li>
+        </ol>
+      </section>
+      <section class="help-section">
+        <h3>Main Dashboard Tabs</h3>
+        <table class="help-table">
+          <thead><tr><th>Tab</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td>📊 Overview</td><td>KPI cards, charts, and the log upload area</td></tr>
+            <tr><td>🔍 Anomaly Explorer</td><td>Sortable table of all anomalous IP/hour buckets with ML scores</td></tr>
+            <tr><td>📋 Evidence &amp; Reports</td><td>Attack chain analysis and HTML/PDF report generation</td></tr>
+            <tr><td>📤 Export &amp; Visualise</td><td>Advanced charts, CSV/JSON export, email &amp; WhatsApp sharing</td></tr>
+            <tr><td>📜 History</td><td>All previous analysis runs with the ability to reload results</td></tr>
+            <tr><td>⚙️ Admin</td><td>User management, audit ledger, and system settings (admin only)</td></tr>
+          </tbody>
+        </table>
+      </section>
+      <section class="help-section">
+        <h3>Key Actions</h3>
+        <ul class="help-list">
+          <li><strong>Analyse logs</strong> — drag-and-drop or click <em>Choose File</em> on the Overview tab, or press <em>"Analyse sample logs"</em> to use the bundled demo.</li>
+          <li><strong>Drill-down detail</strong> — click any row in the Anomaly Explorer to see reason codes, feature deviations, and per-model scores.</li>
+          <li><strong>Download report</strong> — use the <em>📥 Download PDF</em> or <em>Download HTML Report</em> buttons in the Evidence &amp; Reports tab.</li>
+          <li><strong>Share report</strong> — use the <em>✉️ Send via Email</em> or <em>💬 Send via WhatsApp</em> buttons in the Export &amp; Visualise tab.</li>
+          <li><strong>Model retraining</strong> — run <code>python scripts/retrain_model.py retrain</code> from the terminal after collecting feedback.</li>
+        </ul>
+      </section>
+      <section class="help-section">
+        <h3>Useful CLI Commands</h3>
+        <table class="help-table">
+          <thead><tr><th>Command</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>python scripts/setup.py</code></td><td>Interactive first-time configuration wizard</td></tr>
+            <tr><td><code>python -m flask --app app/app.py run</code></td><td>Start the development server</td></tr>
+            <tr><td><code>python scripts/retrain_model.py retrain</code></td><td>Retrain the anomaly-detection model</td></tr>
+            <tr><td><code>python scripts/retrain_model.py rollback --version &lt;file&gt;</code></td><td>Roll back to a previous model version</td></tr>
+            <tr><td><code>pytest tests/ -v</code></td><td>Run the full test suite</td></tr>
+          </tbody>
+        </table>
+      </section>
+      <section class="help-section">
+        <h3>Further Documentation</h3>
+        <p>See the <a href="https://github.com/zayaanamohammedstu-prog/log#readme" target="_blank" rel="noopener">README on GitHub</a> for the full API reference, environment variables, Docker deployment guide, and more.</p>
+      </section>
+    </div>
+    <div class="help-footer">
+      <button class="btn btn-secondary" id="helpCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

@@ -1762,3 +1762,84 @@ function showSendStatus(message, type) {
   el.textContent = message;
   el.className = `send-modal-status status-${type}`;
 }
+
+// ============================================================
+// WELCOME MODAL
+// ============================================================
+const WELCOME_KEY = "logguard_welcomed";
+
+function getWelcomedKey() {
+  const username = document.body.dataset.username || "user";
+  return `${WELCOME_KEY}_${username}`;
+}
+
+function openWelcomeModal() {
+  const overlay = document.getElementById("welcomeOverlay");
+  if (overlay) overlay.classList.add("open");
+}
+
+function closeWelcomeModal() {
+  const overlay  = document.getElementById("welcomeOverlay");
+  const checkbox = document.getElementById("welcomeDontShow");
+  if (overlay) overlay.classList.remove("open");
+  if (checkbox && checkbox.checked) {
+    try { localStorage.setItem(getWelcomedKey(), "1"); } catch (_) {}
+  }
+}
+
+function maybeShowWelcome() {
+  try {
+    if (!localStorage.getItem(getWelcomedKey())) {
+      openWelcomeModal();
+    }
+  } catch (_) {
+    openWelcomeModal();
+  }
+}
+
+// ============================================================
+// HELP MODAL
+// ============================================================
+function openHelpModal() {
+  const overlay = document.getElementById("helpOverlay");
+  if (overlay) overlay.classList.add("open");
+}
+
+function closeHelpModal() {
+  const overlay = document.getElementById("helpOverlay");
+  if (overlay) overlay.classList.remove("open");
+}
+
+// ============================================================
+// ONBOARDING EVENT LISTENERS (run after DOM is ready)
+// ============================================================
+document.addEventListener("DOMContentLoaded", () => {
+  // Welcome modal
+  const getStartedBtn = document.getElementById("welcomeGetStarted");
+  if (getStartedBtn) getStartedBtn.addEventListener("click", closeWelcomeModal);
+
+  // Close welcome if user clicks outside the modal box
+  const welcomeOverlay = document.getElementById("welcomeOverlay");
+  if (welcomeOverlay) {
+    welcomeOverlay.addEventListener("click", (e) => {
+      if (e.target === welcomeOverlay) closeWelcomeModal();
+    });
+  }
+
+  // Help modal close buttons
+  const helpClose    = document.getElementById("helpClose");
+  const helpCloseBtn = document.getElementById("helpCloseBtn");
+  if (helpClose)    helpClose.addEventListener("click", closeHelpModal);
+  if (helpCloseBtn) helpCloseBtn.addEventListener("click", closeHelpModal);
+
+  // Close help if user clicks outside the modal box
+  const helpOverlay = document.getElementById("helpOverlay");
+  if (helpOverlay) {
+    helpOverlay.addEventListener("click", (e) => {
+      if (e.target === helpOverlay) closeHelpModal();
+    });
+  }
+
+  // Show welcome modal for first-time visitors
+  maybeShowWelcome();
+});
