@@ -32,12 +32,14 @@ class MailerError(Exception):
 def send_report_email(
     to_address: str,
     run_id: int,
-    pdf_bytes: bytes,
+    attachment_bytes: bytes,
     *,
     subject: str | None = None,
     body: str | None = None,
+    attachment_filename: str | None = None,
+    attachment_mime_type: str | None = None,
 ) -> None:
-    """Send *pdf_bytes* as an email attachment to *to_address*.
+    """Send a report attachment to *to_address*.
 
     Parameters
     ----------
@@ -45,8 +47,8 @@ def send_report_email(
         Recipient email address.
     run_id:
         Numeric run identifier (used in default subject / filename).
-    pdf_bytes:
-        Raw PDF content to attach.
+    attachment_bytes:
+        Raw attachment content.
     subject:
         Optional email subject override.
     body:
@@ -90,13 +92,19 @@ def send_report_email(
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
 
-    attachment = MIMEBase("application", "octet-stream")
-    attachment.set_payload(pdf_bytes)
+    maintype, subtype = "application", "octet-stream"
+    if attachment_mime_type and "/" in attachment_mime_type:
+        parts = attachment_mime_type.split("/", 1)
+        maintype = parts[0].strip() or "application"
+        subtype = parts[1].split(";")[0].strip() or "octet-stream"
+
+    attachment = MIMEBase(maintype, subtype)
+    attachment.set_payload(attachment_bytes)
     encoders.encode_base64(attachment)
     attachment.add_header(
         "Content-Disposition",
         "attachment",
-        filename=f"logguard_report_run_{run_id}.pdf",
+        filename=attachment_filename or f"logguard_report_run_{run_id}.pdf",
     )
     msg.attach(attachment)
 

@@ -11,6 +11,10 @@ import io
 import json
 import textwrap
 
+# Keep report risk labels aligned with UI copy:
+# Critical risk is classified at ensemble/anomaly score >= 0.85.
+_CRITICAL_THRESHOLD = 0.85
+
 
 def generate_html_report(
     run: dict,
@@ -47,7 +51,7 @@ def generate_html_report(
     critical_count = sum(
         1
         for r in results
-        if (r.get("ensemble_score") or r.get("anomaly_score") or 0.0) >= 0.7
+        if (r.get("ensemble_score") or r.get("anomaly_score") or 0.0) >= _CRITICAL_THRESHOLD
     )
     chain_count = len(chains)
 
@@ -109,37 +113,79 @@ def generate_html_report(
   <meta charset="UTF-8">
   <title>LogGuard Analysis Report &ndash; Run {run_id}</title>
   <style>
+    :root {{
+      --bg: #f6f8fc;
+      --text: #1f2937;
+      --muted: #64748b;
+      --brand: #1d4ed8;
+      --danger: #dc2626;
+      --surface: #ffffff;
+      --line: #e5e7eb;
+    }}
     body {{
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      margin: 2em; color: #333; background: #fff;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.45;
     }}
-    h1 {{ color: #c0392b; margin-bottom: 0.2em; }}
+    .shell {{ max-width: 1180px; margin: 0 auto; padding: 28px; }}
+    .hero {{
+      background: linear-gradient(135deg, #0f172a, #1e3a8a);
+      color: #fff;
+      padding: 24px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25);
+      margin-bottom: 20px;
+    }}
+    .hero h1 {{ margin: 0 0 8px; font-size: 1.65rem; }}
+    .hero p {{ margin: 0; color: rgba(255,255,255,0.9); }}
     h2 {{
-      color: #2c3e50; border-bottom: 2px solid #ecf0f1;
-      padding-bottom: 4px; margin-top: 1.5em;
+      color: #0f172a;
+      margin: 1.2rem 0 .6rem;
+      font-size: 1.1rem;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 6px;
     }}
-    table {{ border-collapse: collapse; width: 100%; margin-top: 1em; }}
-    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }}
-    th {{ background: #2c3e50; color: #fff; }}
-    tr:nth-child(even) {{ background: #f9f9f9; }}
-    .stats {{ display: flex; gap: 1em; flex-wrap: wrap; margin: 1em 0; }}
+    .stats {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      margin: 12px 0;
+    }}
     .stat-box {{
-      padding: 1em 1.5em; background: #ecf0f1; border-radius: 6px;
-      min-width: 120px; text-align: center;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      min-height: 92px;
     }}
-    .stat-box .label {{ font-size: 0.8em; color: #7f8c8d; text-transform: uppercase; }}
-    .stat-box .value {{ font-size: 2em; font-weight: bold; color: #e74c3c; }}
-    ul {{ list-style: disc; padding-left: 1.5em; }}
-    .footer {{ margin-top: 2em; font-size: 0.8em; color: #aaa; border-top: 1px solid #eee; padding-top: 0.5em; }}
+    .stat-box .label {{ font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }}
+    .stat-box .value {{ font-size: 1.55rem; font-weight: 700; color: var(--brand); margin-top: 2px; }}
+    .risk-band {{
+      display: flex; gap: 8px; margin-top: 8px; font-size: .82rem;
+    }}
+    .risk-pill {{
+      padding: 4px 10px; border-radius: 999px; font-weight: 600;
+    }}
+    .pill-critical {{ color: #7f1d1d; background: #fee2e2; }}
+    .pill-high {{ color: #78350f; background: #ffedd5; }}
+    .pill-normal {{ color: #065f46; background: #d1fae5; }}
+    table {{ border-collapse: collapse; width: 100%; margin-top: .7em; background: #fff; border-radius: 10px; overflow: hidden; }}
+    th, td {{ border: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; font-size: .9rem; }}
+    th {{ background: #0f172a; color: #fff; font-weight: 600; }}
+    tr:nth-child(even) {{ background: #f8fafc; }}
+    ul {{ list-style: disc; padding-left: 1.2em; }}
+    .card {{ background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px; }}
+    .footer {{ margin-top: 1.25em; font-size: .78em; color: #94a3b8; border-top: 1px solid var(--line); padding-top: .5em; }}
   </style>
 </head>
 <body>
-  <h1>&#x1F6E1; LogGuard Anomaly Detection Report</h1>
-  <p>
-    <strong>Run ID:</strong> {run_id} &nbsp;&mdash;&nbsp;
-    <strong>Analyst:</strong> {username} &nbsp;&mdash;&nbsp;
-    <strong>Timestamp:</strong> {html.escape(ts)}
-  </p>
+  <div class="shell">
+  <div class="hero">
+    <h1>&#x1F6E1; LogGuard Executive Audit Dashboard</h1>
+    <p><strong>Run ID:</strong> {run_id} &nbsp;&middot;&nbsp; <strong>Analyst:</strong> {username} &nbsp;&middot;&nbsp; <strong>Timestamp:</strong> {html.escape(ts)}</p>
+  </div>
 
   <h2>Executive Summary</h2>
   <div class="stats">
@@ -159,6 +205,19 @@ def generate_html_report(
       <div class="label">Anomaly Rate</div>
       <div class="value">{anomaly_rate}%</div>
     </div>
+    <div class="stat-box">
+      <div class="label">Critical Risk</div>
+      <div class="value">{critical_count}</div>
+    </div>
+    <div class="stat-box">
+      <div class="label">Attack Chains</div>
+      <div class="value">{chain_count}</div>
+    </div>
+  </div>
+  <div class="risk-band">
+    <span class="risk-pill pill-critical">Critical: score ≥ 0.85</span>
+    <span class="risk-pill pill-high">High: score 0.70–0.84</span>
+    <span class="risk-pill pill-normal">Normal: score &lt; 0.70</span>
   </div>
 
   <h2>Top Anomalies</h2>
@@ -176,8 +235,10 @@ def generate_html_report(
   </table>
 
   <h2>Attack Chains</h2>
+  <div class="card">
   <ul>
 {chains_html}  </ul>
+  </div>
 
   <h2>Appendix &ndash; Model Settings</h2>
   <p>
@@ -192,6 +253,7 @@ def generate_html_report(
 
   <div class="footer">
     Generated by LogGuard &copy; {year}
+  </div>
   </div>
 </body>
 </html>"""
@@ -232,6 +294,12 @@ def generate_pdf_report(
     anomaly_count = sum(1 for r in results if r.get("is_anomaly"))
     normal_count = total - anomaly_count
     anomaly_rate = round(anomaly_count / total * 100, 2) if total > 0 else 0.0
+    critical_count = sum(
+        1
+        for r in results
+        if (r.get("ensemble_score") or r.get("anomaly_score") or 0.0) >= _CRITICAL_THRESHOLD
+    )
+    chain_count = len(chains)
 
     anomalies = [r for r in results if r.get("is_anomaly")]
     anomalies_sorted = sorted(

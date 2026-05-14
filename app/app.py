@@ -34,15 +34,16 @@ import hashlib
 import io
 import json
 import os
+import secrets
 import sys
 import tempfile
 import traceback
 from datetime import datetime, timedelta, timezone
 try:
-    from app.mailer import send_report_email, MailerError
+    from app.mailer import send_report_email, send_verification_email, MailerError
     from app.reporting import generate_pdf_report  # noqa: E402
 except ModuleNotFoundError:  # pragma: no cover - fallback for direct module execution
-    from mailer import send_report_email, MailerError
+    from mailer import send_report_email, send_verification_email, MailerError
     from reporting import generate_pdf_report  # noqa: E402
 import pandas as pd
 from flask import (
@@ -70,6 +71,7 @@ from flask_jwt_extended import (
 )
 from flask_socketio import SocketIO, emit, join_room
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
 
 # ---------------------------------------------------------------------------
 # Make the project root importable regardless of working directory
@@ -123,6 +125,10 @@ from db import (  # noqa: E402
     mark_email_verified,
     set_email_verification_token,
     get_user_by_verification_token,
+    get_user_profile,
+    update_user_profile,
+    update_user_password,
+    update_user_avatar,
 )
 from models import User  # noqa: E402
 from run_store import (  # noqa: E402
@@ -563,6 +569,89 @@ def _persist_analysis_result(
     return run_id
 
 
+def _flatten_run_results_for_export(results: list[dict]) -> list[dict]:
+    """Convert persisted run rows to a tabular list for exports."""
+    out: list[dict] = []
+    for row in results:
+        rec: dict = {
+            "id": row.get("id"),
+            "ip_address": row.get("ip_address"),
+            "hour_bucket": row.get("hour_bucket"),
+            "anomaly_score": row.get("anomaly_score"),
+            "ensemble_score": row.get("ensemble_score"),
+            "is_anomaly": row.get("is_anomaly"),
+            "ensemble_label": row.get("ensemble_label"),
+        }
+        raw_features = row.get("features_json")
+        if raw_features:
+            try:
+                features = json.loads(raw_features) if isinstance(raw_features, str) else raw_features
+                if isinstance(features, dict):
+                    rec.update(features)
+            except Exception:
+                pass
+        out.append(rec)
+    return out
+
+
+def _build_report_attachment(run: dict, results: list[dict], chains: list[dict], fmt: str) -> tuple[str, str, bytes]:
+    """Build a run report attachment as (filename, mime, bytes)."""
+    fmt = (fmt or "pdf").strip().lower()
+    run_id = run.get("id") or run.get("run_id") or "run"
+
+    if fmt == "pdf":
+        payload = generate_pdf_report(run, results, chains)
+        return (f"logguard_report_run_{run_id}.pdf", "application/pdf", payload)
+
+    if fmt == "html":
+        html_report = generate_html_report(run, results, chains)
+        return (
+            f"logguard_report_run_{run_id}.html",
+            "text/html; charset=utf-8",
+            html_report.encode("utf-8"),
+        )
+
+    rows = _flatten_run_results_for_export(results)
+    if fmt == "csv":
+        df = pd.DataFrame(rows)
+        csv_data = df.to_csv(index=False)
+        return (
+            f"logguard_results_run_{run_id}.csv",
+            "text/csv; charset=utf-8",
+            csv_data.encode("utf-8"),
+        )
+    if fmt == "json":
+        payload = {
+            "run": run,
+            "results": rows,
+            "chains": chains,
+        }
+        return (
+            f"logguard_results_run_{run_id}.json",
+            "application/json",
+            json.dumps(payload, indent=2, default=str).encode("utf-8"),
+        )
+
+    raise ValueError("Unsupported format. Use one of: pdf, html, csv, json.")
+
+
+def _emit_admin_notification(event_type: str, message: str, **payload: object) -> None:
+    """Emit a realtime admin notification event to connected dashboard clients."""
+    try:
+        socketio.emit(
+            "admin_notification",
+            {
+                "type": event_type,
+                "message": message,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                **payload,
+            },
+            room="audit_room",
+        )
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -593,6 +682,18 @@ def _is_auditor_role() -> bool:
 def _run_access_denied(run: dict) -> bool:
     """Return True when the current user may not access the given run."""
     return _is_auditor_role() and run.get("username") != current_user.username
+
+
+def _status_blocking_message(status: str) -> str | None:
+    """Return a login-blocking message for account status, else None."""
+    norm = (status or "active").strip().lower()
+    if norm == "email_verification_pending":
+        return "Please verify your email before admin approval."
+    if norm == "pending":
+        return "Account pending approval."
+    if norm == "suspended":
+        return "Account suspended."
+    return None
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -671,10 +772,9 @@ def login():
         if row and verify_password(row["password"], password):
             # Check user status before allowing login
             status = row.get("status", "active") or "active"
-            if status == "pending":
-                error = "Account pending approval."
-            elif status == "suspended":
-                error = "Account suspended."
+            error = _status_blocking_message(status)
+            if error:
+                pass
             else:
                 user = User(row)
                 login_user(user)
@@ -1064,7 +1164,7 @@ def api_run_report_pdf(run_id: int):
 @app.route("/api/runs/<int:run_id>/send/email", methods=["POST"])
 @login_required
 def api_send_email(run_id: int):
-    """Send a PDF report to an email address."""
+    """Send a run report to an email address in a selected format."""
     run = get_run(app.instance_path, run_id)
     if run is None:
         return jsonify({"error": "Run not found."}), 404
@@ -1073,25 +1173,47 @@ def api_send_email(run_id: int):
 
     data = request.get_json(silent=True) or {}
     to_address = (data.get("to") or "").strip()
+    report_format = (data.get("format") or "pdf").strip().lower()
     if not to_address:
         return jsonify({"error": "Recipient email address ('to') is required."}), 400
 
     results = get_run_results(app.instance_path, run_id)
     chains = get_chains(app.instance_path, run_id)
     try:
-        pdf_bytes = generate_pdf_report(run, results, chains)
+        filename, mime_type, attachment_bytes = _build_report_attachment(run, results, chains, report_format)
     except ImportError:
         return jsonify({"error": "PDF generation requires the 'fpdf2' package."}), 500
+    except ValueError:
+        return jsonify({"error": "Unsupported format. Use one of: pdf, html, csv, json."}), 400
 
     try:
-        send_report_email(to_address, run_id, pdf_bytes)
+        send_report_email(
+            to_address,
+            run_id,
+            attachment_bytes,
+            subject=f"LogGuard Report — Run #{run_id} ({report_format.upper()})",
+            body=(
+                f"Please find attached the LogGuard run #{run_id} report as {report_format.upper()}.\n\n"
+                f"Generated by: {current_user.username}"
+            ),
+            attachment_filename=filename,
+            attachment_mime_type=mime_type,
+        )
     except MailerError as exc:
         app.logger.warning("Email send failed for run %s: %s", run_id, exc)
         # exc.args[0] is the controlled message we set in MailerError.__init__
         error_msg = exc.args[0] if exc.args else "Failed to send email."
         return jsonify({"error": error_msg}), 500
 
-    return jsonify({"ok": True, "message": f"Report sent to {to_address}."})
+    _emit_admin_notification(
+        "report_sent",
+        f"Report run #{run_id} sent to {to_address} ({report_format.upper()}).",
+        run_id=run_id,
+        to=to_address,
+        format=report_format,
+        actor=current_user.username,
+    )
+    return jsonify({"ok": True, "message": f"Report ({report_format.upper()}) sent to {to_address}."})
 
 
 @app.route("/api/runs/<int:run_id>/send/whatsapp", methods=["POST"])
@@ -1305,10 +1427,9 @@ def api_login():
     if not row or not verify_password(row["password"], password):
         return jsonify({"error": "Invalid username or password."}), 401
     status = row.get("status", "active") or "active"
-    if status == "pending":
-        return jsonify({"error": "Account pending approval."}), 403
-    if status == "suspended":
-        return jsonify({"error": "Account suspended."}), 403
+    blocking = _status_blocking_message(status)
+    if blocking:
+        return jsonify({"error": blocking}), 403
     identity = str(row["id"])
     access_token = create_access_token(identity=identity)
     refresh_token = create_refresh_token(identity=identity)
@@ -1344,6 +1465,9 @@ def api_me():
     return jsonify({
         "id": row["id"],
         "username": row["username"],
+        "display_name": row.get("display_name") or row["username"],
+        "email": row.get("email") or "",
+        "avatar_url": row.get("avatar_url") or "",
         "role": row["role"],
         "status": row.get("status", "active"),
     })
@@ -1363,20 +1487,40 @@ def api_register():
         return jsonify({"error": "Username must be at least 3 characters."}), 400
     if len(password) < 6:
         return jsonify({"error": "Password must be at least 6 characters."}), 400
+    if count_users(app.instance_path) > 0 and not email:
+        return jsonify({"error": "Email is required to register and verify your account."}), 400
     if get_user_by_username(app.instance_path, username):
         return jsonify({"error": f"Username '{username}' already exists."}), 409
     if email and get_user_by_email(app.instance_path, email):
         return jsonify({"error": "An account with that email already exists."}), 409
+
+    verification_token = secrets.token_urlsafe(32) if email else None
     if count_users(app.instance_path) == 0:
         role, status = "admin", "active"
+        email_verified = 1 if email else 0
     else:
-        role, status = "auditor", "pending"
+        role, status = "auditor", "email_verification_pending"
+        email_verified = 0
     new_id = create_user(
         app.instance_path, username, password,
         role=role, status=status,
         email=email, user_type=user_type,
+        email_verified=email_verified,
+        verify_token=verification_token,
+        display_name=username,
     )
-    message = "Registration successful. Awaiting admin approval." if status == "pending" else "Account created."
+    if verification_token and email:
+        verify_url = url_for("verify_email", token=verification_token, _external=True)
+        try:
+            send_verification_email(email, verify_url)
+        except MailerError:
+            app.logger.warning("Verification email send failed for user %s", username, exc_info=True)
+            return jsonify({"error": "Could not send verification email."}), 500
+    message = (
+        "Registration successful. Please verify your email to move to admin approval."
+        if status == "email_verification_pending"
+        else "Account created."
+    )
     return jsonify({
         "id": new_id,
         "username": username,
@@ -1409,6 +1553,12 @@ def api_admin_approve_user(user_id: int):
     ok = approve_user(app.instance_path, user_id, current_user.username)
     if not ok:
         return jsonify({"error": "User not found."}), 404
+    _emit_admin_notification(
+        "user_approved",
+        f"User #{user_id} approved by {current_user.username}.",
+        user_id=user_id,
+        actor=current_user.username,
+    )
     return jsonify({"approved": True, "user_id": user_id})
 
 
@@ -1421,7 +1571,109 @@ def api_admin_reject_user(user_id: int):
     ok = reject_user(app.instance_path, user_id, current_user.username)
     if not ok:
         return jsonify({"error": "User not found."}), 404
+    _emit_admin_notification(
+        "user_rejected",
+        f"User #{user_id} rejected by {current_user.username}.",
+        user_id=user_id,
+        actor=current_user.username,
+    )
     return jsonify({"rejected": True, "user_id": user_id})
+
+
+@app.route("/api/account/profile", methods=["GET"])
+@login_required
+def api_account_profile():
+    """Return current account profile."""
+    profile = get_user_profile(app.instance_path, current_user.id)
+    if not profile:
+        return jsonify({"error": "User not found."}), 404
+    return jsonify({"profile": profile})
+
+
+@app.route("/api/account/profile", methods=["PATCH"])
+@login_required
+def api_account_update_profile():
+    """Update current account profile fields."""
+    data = request.get_json(force=True) or {}
+    display_name = data.get("display_name")
+    email = data.get("email")
+    if email:
+        existing = get_user_by_email(app.instance_path, email)
+        if existing and existing.get("id") != current_user.id:
+            return jsonify({"error": "An account with that email already exists."}), 409
+    updated = update_user_profile(
+        app.instance_path,
+        current_user.id,
+        display_name=display_name,
+        email=email,
+    )
+    if not updated:
+        return jsonify({"error": "No profile changes submitted."}), 400
+    profile = get_user_profile(app.instance_path, current_user.id)
+    return jsonify({"ok": True, "profile": profile})
+
+
+@app.route("/api/account/password", methods=["POST"])
+@login_required
+def api_account_update_password():
+    """Update current account password."""
+    data = request.get_json(force=True) or {}
+    current_password = data.get("current_password") or ""
+    new_password = data.get("new_password") or ""
+    if len(new_password) < 6:
+        return jsonify({"error": "New password must be at least 6 characters."}), 400
+    row = get_user_by_id(app.instance_path, current_user.id)
+    if not row or not verify_password(row["password"], current_password):
+        return jsonify({"error": "Current password is incorrect."}), 400
+    ok = update_user_password(app.instance_path, current_user.id, new_password)
+    if not ok:
+        return jsonify({"error": "Failed to update password."}), 500
+    return jsonify({"ok": True, "message": "Password updated successfully."})
+
+
+@app.route("/api/account/avatar", methods=["POST"])
+@login_required
+def api_account_upload_avatar():
+    """Upload and assign a profile avatar for the current user."""
+    if "avatar" not in request.files:
+        return jsonify({"error": "avatar file is required."}), 400
+    f = request.files["avatar"]
+    if not f or not f.filename:
+        return jsonify({"error": "No file uploaded."}), 400
+
+    filename = secure_filename(f.filename)
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in {".png", ".jpg", ".jpeg", ".webp"}:
+        return jsonify({"error": "Unsupported image type. Use png, jpg, jpeg, or webp."}), 400
+
+    f.seek(0, io.SEEK_END)
+    size = f.tell()
+    f.seek(0)
+    if size > 2 * 1024 * 1024:
+        return jsonify({"error": "Avatar file size must be <= 2MB."}), 400
+
+    existing_profile = get_user_profile(app.instance_path, current_user.id) or {}
+    existing_avatar_url = (existing_profile.get("avatar_url") or "").strip()
+
+    avatars_dir = os.path.join(app.static_folder, "uploads", "avatars")
+    os.makedirs(avatars_dir, exist_ok=True)
+    stored_name = f"avatar_{secrets.token_hex(16)}{ext}"
+    abs_path = os.path.join(avatars_dir, stored_name)
+    f.save(abs_path)
+
+    avatar_url = f"/static/uploads/avatars/{stored_name}"
+    ok = update_user_avatar(app.instance_path, current_user.id, avatar_url)
+    if not ok:
+        return jsonify({"error": "Failed to save avatar reference."}), 500
+    if existing_avatar_url.startswith("/static/uploads/avatars/"):
+        old_file = os.path.join(app.static_folder, existing_avatar_url.removeprefix("/static/"))
+        if os.path.isfile(old_file):
+            try:
+                os.remove(old_file)
+            except OSError:
+                app.logger.warning("Failed removing old avatar for user %s", current_user.id, exc_info=True)
+    profile = get_user_profile(app.instance_path, current_user.id)
+    return jsonify({"ok": True, "avatar_url": avatar_url, "profile": profile})
 
 
 @app.route("/api/admin/users/<int:user_id>/role", methods=["PATCH"])

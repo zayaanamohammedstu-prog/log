@@ -17,6 +17,9 @@ class User(UserMixin):
         self.username = row["username"]
         self.role     = row["role"]
         self.status   = row.get("status", "active") or "active"
+        self.display_name = row.get("display_name") or self.username
+        self.email = row.get("email") or ""
+        self.avatar_url = row.get("avatar_url") or ""
         # Do NOT store hashed password in session-persisted object
 
     # Flask-Login expects get_id() to return a string

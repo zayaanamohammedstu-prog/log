@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LogGuard — Admin Portal</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -192,15 +193,16 @@
           <button onclick="showNotifications()" class="bg-gray-800/50 border border-gray-700 rounded-xl px-3 py-2 text-gray-400 hover:text-white transition-all">
             <i class="fas fa-bell"></i>
           </button>
-          <span class="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+          <span id="notifDot" class="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse hidden"></span>
         </div>
         
         <!-- User Profile Dropdown -->
         <div class="relative">
           <button onclick="toggleUserMenu()" class="flex items-center gap-3 bg-gray-800/50 border border-gray-700 rounded-xl px-3 py-1.5 hover:bg-gray-800 transition-all group">
             <div class="relative">
-              <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-sm font-bold shadow-md">
-                {{ user.username[0]|upper }}
+              <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-sm font-bold shadow-md overflow-hidden">
+                <img id="topbarAvatarImg" src="{{ user.avatar_url }}" alt="avatar" class="w-full h-full object-cover {% if not user.avatar_url %}hidden{% endif %}" />
+                <span id="topbarAvatarFallback" class="{% if user.avatar_url %}hidden{% endif %}">{{ user.username[0]|upper }}</span>
               </div>
               <div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-gray-900"></div>
             </div>
@@ -215,8 +217,9 @@
           <div id="userDropdown" class="absolute right-0 mt-2 w-64 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl hidden z-50">
             <div class="p-3 border-b border-gray-800">
               <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center font-bold">
-                  {{ user.username[0]|upper }}
+                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center font-bold overflow-hidden">
+                  <img id="dropdownAvatarImg" src="{{ user.avatar_url }}" alt="avatar" class="w-full h-full object-cover {% if not user.avatar_url %}hidden{% endif %}" />
+                  <span id="dropdownAvatarFallback" class="{% if user.avatar_url %}hidden{% endif %}">{{ user.username[0]|upper }}</span>
                 </div>
                 <div>
                   <div class="font-semibold">{{ user.username }}</div>
@@ -497,13 +500,31 @@
       <h3 class="font-bold text-2xl">Profile Settings</h3>
       <button onclick="closeProfileSettings()" class="text-gray-500 hover:text-gray-300"><i class="fas fa-times text-xl"></i></button>
     </div>
-    <div class="text-center mb-6">
-      <div class="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-4xl font-bold mx-auto mb-3">
-        {{ user.username[0]|upper }}
+    <form id="profileForm" class="space-y-4" onsubmit="saveProfileSettings(event)">
+      <div class="text-center mb-2">
+      <div id="profileAvatarWrap" class="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-4xl font-bold mx-auto mb-3 overflow-hidden">
+        <img id="profileAvatarImg" src="{{ user.avatar_url }}" alt="avatar" class="w-full h-full object-cover {% if not user.avatar_url %}hidden{% endif %}" />
+        <span id="profileAvatarText" class="{% if user.avatar_url %}hidden{% endif %}">{{ user.username[0]|upper }}</span>
       </div>
-      <p class="text-gray-400">Profile settings coming soon in the next update.</p>
-    </div>
-    <button onclick="closeProfileSettings()" class="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white py-3 rounded-xl">Close</button>
+      </div>
+      <div>
+        <label class="block text-sm text-gray-300 mb-1">Display name</label>
+        <input id="profileDisplayName" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm" />
+      </div>
+      <div>
+        <label class="block text-sm text-gray-300 mb-1">Email</label>
+        <input id="profileEmail" type="email" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm" />
+      </div>
+      <div>
+        <label class="block text-sm text-gray-300 mb-1">Profile picture</label>
+        <input id="profileAvatarInput" type="file" accept=".png,.jpg,.jpeg,.webp" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm" />
+        <p class="text-xs text-gray-400 mt-1">PNG/JPG/WEBP, max 2MB.</p>
+      </div>
+      <div class="flex gap-3">
+        <button type="submit" class="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white py-3 rounded-xl">Save Profile</button>
+        <button type="button" onclick="closeProfileSettings()" class="flex-1 bg-gray-800 text-white py-3 rounded-xl">Close</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -513,11 +534,24 @@
       <h3 class="font-bold text-2xl">Account Settings</h3>
       <button onclick="closeAccountSettings()" class="text-gray-500 hover:text-gray-300"><i class="fas fa-times text-xl"></i></button>
     </div>
-    <div class="text-center mb-6">
-      <i class="fas fa-cog text-5xl text-gray-600 mb-3"></i>
-      <p class="text-gray-400">Account settings coming soon in the next update.</p>
-    </div>
-    <button onclick="closeAccountSettings()" class="w-full bg-gradient-to-r from-blue-600 to-blue-500 text-white py-3 rounded-xl">Close</button>
+    <form id="passwordForm" class="space-y-4" onsubmit="saveAccountSettings(event)">
+      <div>
+        <label class="block text-sm text-gray-300 mb-1">Current password</label>
+        <input id="currentPassword" type="password" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm" required />
+      </div>
+      <div>
+        <label class="block text-sm text-gray-300 mb-1">New password</label>
+        <input id="newPasswordAccount" type="password" minlength="6" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm" required />
+      </div>
+      <div>
+        <label class="block text-sm text-gray-300 mb-1">Confirm new password</label>
+        <input id="confirmPasswordAccount" type="password" minlength="6" class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm" required />
+      </div>
+      <div class="flex gap-3">
+        <button type="submit" class="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 text-white py-3 rounded-xl">Update Password</button>
+        <button type="button" onclick="closeAccountSettings()" class="flex-1 bg-gray-800 text-white py-3 rounded-xl">Close</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -579,13 +613,25 @@ function toggleTheme() {
 }
 
 // Notifications - Working
+var notifications = [];
+var socketRef = null;
+var AVATAR_REFRESH_DELAY_MS = 600; // wait briefly so static file is ready before reload
+
 function showNotifications() {
-  showToast('🔔 No new notifications at this time', 'info');
+  if (!notifications.length) {
+    showToast('🔔 No new notifications at this time', 'info');
+    return;
+  }
+  const latest = notifications.slice(0, 5).map(function(n) { return '• ' + n.message; }).join('\n');
+  alert('Latest notifications:\n\n' + latest);
+  const dot = document.getElementById('notifDot');
+  if (dot) dot.classList.add('hidden');
 }
 
 // Profile Settings - Working
 function showProfileSettings() {
   document.getElementById('profileSettingsModal').classList.remove('hidden');
+  loadProfileSettings();
   toggleUserMenu();
 }
 
@@ -601,6 +647,100 @@ function showAccountSettings() {
 
 function closeAccountSettings() {
   document.getElementById('accountSettingsModal').classList.add('hidden');
+  var form = document.getElementById('passwordForm');
+  if (form) form.reset();
+}
+
+async function loadProfileSettings() {
+  try {
+    const res = await fetch('/api/account/profile');
+    const data = await res.json();
+    if (!res.ok || !data.profile) {
+      showToast((data && data.error) || 'Failed to load profile settings.', 'error');
+      return;
+    }
+    document.getElementById('profileDisplayName').value = data.profile.display_name || data.profile.username || '';
+    document.getElementById('profileEmail').value = data.profile.email || '';
+  } catch (_) {
+    showToast('Failed to load profile settings.', 'error');
+  }
+}
+
+async function saveProfileSettings(event) {
+  event.preventDefault();
+  const display_name = document.getElementById('profileDisplayName').value.trim();
+  const email = document.getElementById('profileEmail').value.trim();
+  const avatarInput = document.getElementById('profileAvatarInput');
+
+  const pRes = await fetch('/api/account/profile', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ display_name, email }),
+  });
+  const pData = await pRes.json();
+  if (!pRes.ok) {
+    showToast(pData.error || 'Failed to update profile.', 'error');
+    return;
+  }
+
+  if (avatarInput && avatarInput.files && avatarInput.files[0]) {
+    const fd = new FormData();
+    fd.append('avatar', avatarInput.files[0]);
+    const aRes = await fetch('/api/account/avatar', { method: 'POST', body: fd });
+    const aData = await aRes.json();
+    if (!aRes.ok) {
+      showToast(aData.error || 'Profile updated, but avatar upload failed.', 'warning');
+    } else {
+      showToast('Profile and avatar updated successfully.', 'success');
+      const avatarUrl = aData.avatar_url || '';
+      if (avatarUrl) {
+        const cacheBust = avatarUrl + '?v=' + Date.now();
+        const topImg = document.getElementById('topbarAvatarImg');
+        const dropImg = document.getElementById('dropdownAvatarImg');
+        const profileImg = document.getElementById('profileAvatarImg');
+        const topFallback = document.getElementById('topbarAvatarFallback');
+        const dropFallback = document.getElementById('dropdownAvatarFallback');
+        const profileFallback = document.getElementById('profileAvatarText');
+        if (topImg) topImg.src = cacheBust;
+        if (dropImg) dropImg.src = cacheBust;
+        if (profileImg) profileImg.src = cacheBust;
+        if (topImg) topImg.classList.remove('hidden');
+        if (dropImg) dropImg.classList.remove('hidden');
+        if (profileImg) profileImg.classList.remove('hidden');
+        if (topFallback) topFallback.classList.add('hidden');
+        if (dropFallback) dropFallback.classList.add('hidden');
+        if (profileFallback) profileFallback.classList.add('hidden');
+      }
+      setTimeout(function() { closeProfileSettings(); }, AVATAR_REFRESH_DELAY_MS);
+      return;
+    }
+  } else {
+    showToast('Profile updated successfully.', 'success');
+  }
+  closeProfileSettings();
+}
+
+async function saveAccountSettings(event) {
+  event.preventDefault();
+  const current_password = document.getElementById('currentPassword').value;
+  const new_password = document.getElementById('newPasswordAccount').value;
+  const confirm_password = document.getElementById('confirmPasswordAccount').value;
+  if (new_password !== confirm_password) {
+    showToast('New password and confirmation do not match.', 'error');
+    return;
+  }
+  const res = await fetch('/api/account/password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current_password, new_password }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    showToast(data.error || 'Failed to update password.', 'error');
+    return;
+  }
+  showToast('Password updated successfully.', 'success');
+  closeAccountSettings();
 }
 
 // Modal functions
@@ -856,6 +996,35 @@ if (!isForbidden) {
   const urlParams = new URLSearchParams(window.location.search);
   const initTab = urlParams.get('tab') || 'overview';
   showTab(initTab);
+
+  try {
+    socketRef = io('/', { transports: ['websocket', 'polling'] });
+    socketRef.on('connect', function() {
+      socketRef.emit('join_audit_room', { room: 'audit_room' });
+    });
+    socketRef.on('new_analysis', function(data) {
+      const msg = `New analysis #${data.run_id} by ${data.username} (${data.anomaly_count || 0} anomalies)`;
+      notifications.unshift({ message: msg, ts: Date.now() });
+      notifications = notifications.slice(0, 30);
+      const dot = document.getElementById('notifDot');
+      if (dot) dot.classList.remove('hidden');
+      showToast(msg, 'info', 5000);
+      loadStats();
+    });
+    socketRef.on('admin_notification', function(data) {
+      if (!data || !data.message) return;
+      notifications.unshift({ message: data.message, ts: Date.now() });
+      notifications = notifications.slice(0, 30);
+      const dot = document.getElementById('notifDot');
+      if (dot) dot.classList.remove('hidden');
+      showToast(data.message, 'info', 5000);
+      loadStats();
+      loadPending();
+    });
+  } catch (err) {
+    showToast('Realtime notifications unavailable right now.', 'warning');
+    if (window && window.console) console.warn('Socket connection failed:', err);
+  }
 }
 </script>
 <div class="fixed right-4 bottom-4 z-40 flex flex-col gap-2">

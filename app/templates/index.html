@@ -749,6 +749,15 @@
         <label for="sendModalRecipient" id="sendModalLabel">Recipient</label>
         <input type="text" id="sendModalRecipient" class="send-modal-input" placeholder="" autocomplete="off" />
       </div>
+      <div class="form-group" id="sendModalFormatGroup">
+        <label for="sendModalFormat">Report format</label>
+        <select id="sendModalFormat" class="send-modal-input">
+          <option value="pdf">PDF</option>
+          <option value="html">HTML</option>
+          <option value="csv">CSV</option>
+          <option value="json">JSON</option>
+        </select>
+      </div>
       <div id="sendModalStatus" class="send-modal-status hidden"></div>
     </div>
     <div class="send-modal-footer">

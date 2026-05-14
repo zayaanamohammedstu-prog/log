@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 import os
+import json
 from datetime import datetime, timezone
 
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -42,6 +43,9 @@ def init_db(instance_path: str) -> None:
                 email_verified INTEGER DEFAULT 0,
                 user_type      TEXT    DEFAULT 'auditor',
                 verify_token   TEXT,
+                display_name   TEXT,
+                avatar_url     TEXT,
+                preferences_json TEXT,
                 deleted_at     TEXT,
                 deleted_by     TEXT
             );
@@ -106,6 +110,9 @@ def init_db(instance_path: str) -> None:
             "ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0",
             "ALTER TABLE users ADD COLUMN user_type TEXT DEFAULT 'auditor'",
             "ALTER TABLE users ADD COLUMN verify_token TEXT",
+            "ALTER TABLE users ADD COLUMN display_name TEXT",
+            "ALTER TABLE users ADD COLUMN avatar_url TEXT",
+            "ALTER TABLE users ADD COLUMN preferences_json TEXT",
         ]:
             try:
                 conn.execute(alter_sql)
@@ -128,6 +135,9 @@ def create_user(
     status: str = "active",
     email: str = "",
     user_type: str = "",
+    email_verified: int = 0,
+    verify_token: str | None = None,
+    display_name: str = "",
 ) -> int:
     """Hash *password* and insert a new user row. Returns the new row id."""
     # Normalise role: strip whitespace and lowercase to prevent mismatch bugs
@@ -138,8 +148,19 @@ def create_user(
     conn = sqlite3.connect(_db_path(instance_path))
     try:
         cur = conn.execute(
-            "INSERT INTO users (username, password, role, status, email, user_type) VALUES (?, ?, ?, ?, ?, ?)",
-            (username, hashed, role, status, email or "", user_type or ""),
+            "INSERT INTO users (username, password, role, status, email, user_type, email_verified, verify_token, display_name)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                username,
+                hashed,
+                role,
+                status,
+                email or "",
+                user_type or "",
+                int(bool(email_verified)),
+                verify_token,
+                (display_name or username or "").strip(),
+            ),
         )
         conn.commit()
         return cur.lastrowid
@@ -153,7 +174,8 @@ def get_user_by_username(instance_path: str, username: str) -> dict | None:
     conn.row_factory = sqlite3.Row
     try:
         row = conn.execute(
-            "SELECT id, username, password, role, status, deleted_at, deleted_by"
+            "SELECT id, username, password, role, status, email, email_verified, user_type, verify_token,"
+            " display_name, avatar_url, preferences_json, deleted_at, deleted_by"
             " FROM users WHERE username = ?",
             (username,),
         ).fetchone()
@@ -172,14 +194,16 @@ def get_user_by_id(
     conn.row_factory = sqlite3.Row
     try:
         if include_deleted:
-            row = conn.execute(
-                "SELECT id, username, password, role, status, deleted_at, deleted_by"
+                row = conn.execute(
+                "SELECT id, username, password, role, status, email, email_verified, user_type, verify_token,"
+                " display_name, avatar_url, preferences_json, deleted_at, deleted_by"
                 " FROM users WHERE id = ?",
                 (user_id,),
             ).fetchone()
         else:
             row = conn.execute(
-                "SELECT id, username, password, role, status, deleted_at, deleted_by"
+                "SELECT id, username, password, role, status, email, email_verified, user_type, verify_token,"
+                " display_name, avatar_url, preferences_json, deleted_at, deleted_by"
                 " FROM users WHERE id = ? AND deleted_at IS NULL",
                 (user_id,),
             ).fetchone()
@@ -207,12 +231,12 @@ def list_users(instance_path: str, include_deleted: bool = False) -> list[dict]:
     try:
         if include_deleted:
             rows = conn.execute(
-                "SELECT id, username, role, status, deleted_at, deleted_by"
+                "SELECT id, username, role, status, email, email_verified, display_name, avatar_url, deleted_at, deleted_by"
                 " FROM users ORDER BY id"
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, username, role, status, deleted_at, deleted_by"
+                "SELECT id, username, role, status, email, email_verified, display_name, avatar_url, deleted_at, deleted_by"
                 " FROM users WHERE deleted_at IS NULL ORDER BY id"
             ).fetchall()
         return [dict(r) for r in rows]
@@ -400,7 +424,11 @@ def mark_email_verified(instance_path: str, user_id: int) -> bool:
     conn = sqlite3.connect(_db_path(instance_path))
     try:
         cur = conn.execute(
-            "UPDATE users SET email_verified = 1, verify_token = NULL WHERE id = ? AND deleted_at IS NULL",
+            "UPDATE users"
+            " SET email_verified = 1,"
+            "     verify_token = NULL,"
+            "     status = CASE WHEN status = 'email_verification_pending' THEN 'pending' ELSE status END"
+            " WHERE id = ? AND deleted_at IS NULL",
             (user_id,),
         )
         conn.commit()
@@ -433,6 +461,93 @@ def get_user_by_verification_token(instance_path: str, token: str) -> dict | Non
             (token,),
         ).fetchone()
         return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_user_profile(instance_path: str, user_id: int) -> dict | None:
+    """Return profile-safe fields for the given user."""
+    conn = sqlite3.connect(_db_path(instance_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT id, username, role, status, email, email_verified, user_type, display_name, avatar_url, preferences_json"
+            " FROM users WHERE id = ? AND deleted_at IS NULL",
+            (user_id,),
+        ).fetchone()
+        if not row:
+            return None
+        out = dict(row)
+        try:
+            out["preferences"] = json.loads(out.get("preferences_json") or "{}")
+        except Exception:
+            out["preferences"] = {}
+        return out
+    finally:
+        conn.close()
+
+
+def update_user_profile(
+    instance_path: str,
+    user_id: int,
+    *,
+    display_name: str | None = None,
+    email: str | None = None,
+) -> bool:
+    """Update mutable profile fields for a user."""
+    has_display_name = display_name is not None
+    has_email = email is not None
+    if not has_display_name and not has_email:
+        return False
+
+    conn = sqlite3.connect(_db_path(instance_path))
+    try:
+        if has_display_name and has_email:
+            cur = conn.execute(
+                "UPDATE users SET display_name = ?, email = ? WHERE id = ? AND deleted_at IS NULL",
+                (display_name.strip(), email.strip(), user_id),
+            )
+        elif has_display_name:
+            cur = conn.execute(
+                "UPDATE users SET display_name = ? WHERE id = ? AND deleted_at IS NULL",
+                (display_name.strip(), user_id),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE users SET email = ? WHERE id = ? AND deleted_at IS NULL",
+                (email.strip(), user_id),
+            )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def update_user_password(instance_path: str, user_id: int, new_password: str) -> bool:
+    """Update password hash for a user."""
+    hashed = generate_password_hash(new_password)
+    conn = sqlite3.connect(_db_path(instance_path))
+    try:
+        cur = conn.execute(
+            "UPDATE users SET password = ? WHERE id = ? AND deleted_at IS NULL",
+            (hashed, user_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def update_user_avatar(instance_path: str, user_id: int, avatar_url: str) -> bool:
+    """Update avatar URL for a user."""
+    conn = sqlite3.connect(_db_path(instance_path))
+    try:
+        cur = conn.execute(
+            "UPDATE users SET avatar_url = ? WHERE id = ? AND deleted_at IS NULL",
+            (avatar_url, user_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
     finally:
         conn.close()
 
