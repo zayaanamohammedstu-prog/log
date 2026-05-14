@@ -111,7 +111,8 @@
       <span class="hidden md:inline-block ml-2 text-[11px] font-bold uppercase tracking-wider bg-blue-950/60 border border-blue-500/40 rounded-full px-2.5 py-0.5 text-blue-300">v3.0 ZK-AUDIT</span>
     </div>
     <div class="flex gap-3 items-center">
-      <a href="#" class="hidden md:block text-sm font-medium text-gray-300 hover:text-white transition px-3 py-1.5 rounded-full hover:bg-white/5">Documentation</a>
+      <a href="#guide" class="hidden md:block text-sm font-medium text-gray-300 hover:text-white transition px-3 py-1.5 rounded-full hover:bg-white/5">Guide</a>
+      <a href="{{ url_for('super_admin') }}" class="hidden md:block text-sm font-medium text-gray-300 hover:text-white transition px-3 py-1.5 rounded-full hover:bg-white/5">Super Admin</a>
       <a href="{{ url_for('login') }}" class="relative overflow-hidden group bg-white/5 backdrop-blur-md border border-white/20 hover:border-blue-400/70 text-white px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200 hover:shadow-lg hover:shadow-blue-500/20">
         <span class="relative z-10">Sign In →</span>
         <span class="absolute inset-0 bg-gradient-to-r from-blue-600/40 to-indigo-600/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
@@ -178,6 +179,46 @@
       </div>
     </div>
   </main>
+
+  <section class="py-8 px-6">
+    <div class="max-w-5xl mx-auto">
+      <div class="glass-card rounded-2xl p-5 md:p-6 scroll-reveal">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div class="text-sm text-blue-300 font-semibold">Quick start guide</div>
+            <div class="text-gray-300 text-sm">First login? Open the product guide to learn where each button leads.</div>
+          </div>
+          <a href="#guide" class="btn-primary-glow px-4 py-2 rounded-lg text-sm font-semibold">Open guide</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-10 px-6 border-t border-white/5">
+    <div class="max-w-5xl mx-auto scroll-reveal">
+      <h2 class="text-3xl font-bold text-center mb-6">Platform Highlights</h2>
+      <div class="relative glass-card rounded-2xl p-6 overflow-hidden">
+        <div id="featureCarouselTrack" class="transition-all duration-500">
+          <div class="carousel-slide">
+            <h3 class="text-xl font-semibold mb-2">1) Upload and analyze</h3>
+            <p class="text-gray-300 text-sm">Use sample logs or upload your own file, then review anomalies immediately in the workbench.</p>
+          </div>
+          <div class="carousel-slide hidden">
+            <h3 class="text-xl font-semibold mb-2">2) Review evidence</h3>
+            <p class="text-gray-300 text-sm">Check attack chains, feedback counts, and role-based dashboards for concise decision support.</p>
+          </div>
+          <div class="carousel-slide hidden">
+            <h3 class="text-xl font-semibold mb-2">3) Export reports</h3>
+            <p class="text-gray-300 text-sm">Generate minimal HTML/PDF summaries with run, analyst, timestamp, anomaly totals, and risk stats.</p>
+          </div>
+        </div>
+        <div class="mt-5 flex items-center justify-center gap-3">
+          <button class="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg" onclick="moveCarousel(-1)" aria-label="Previous slide">⬅</button>
+          <button class="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg" onclick="moveCarousel(1)" aria-label="Next slide">➡</button>
+        </div>
+      </div>
+    </div>
+  </section>
   
   <!-- FEATURES SECTION (reimagined) -->
   <section id="features" class="relative py-20 px-6 border-t border-white/5 bg-[#050a15]/80 backdrop-blur-sm">
@@ -269,7 +310,7 @@
   </section>
   
   <!-- AUDIT FLOW PREVIEW (ML ENSEMBLE CARD) -->
-  <section class="py-16 px-6 border-t border-white/5">
+  <section id="guide" class="py-16 px-6 border-t border-white/5">
     <div class="max-w-5xl mx-auto text-center mb-10 scroll-reveal">
       <h2 class="text-3xl font-bold">How LogGuard transforms IT audits</h2>
       <p class="text-gray-400 mt-2">From raw logs to court‑ready reports — instant, verifiable, intelligent.</p>
@@ -373,6 +414,15 @@
         showToast('LogGuard Zero‑Trust environment active', 'info', 3500);
       }, 800);
     });
+
+    let carouselIndex = 0;
+    function moveCarousel(step) {
+      const slides = Array.from(document.querySelectorAll('.carousel-slide'));
+      if (!slides.length) return;
+      slides[carouselIndex].classList.add('hidden');
+      carouselIndex = (carouselIndex + step + slides.length) % slides.length;
+      slides[carouselIndex].classList.remove('hidden');
+    }
   </script>
   <style>
     .toast-success { border-left-color: #10b981; background: rgba(16, 185, 129, 0.15); backdrop-filter: blur(12px);}
@@ -381,5 +431,9 @@
     .scroll-reveal { opacity: 0; transform: translateY(30px); transition: opacity 0.7s cubic-bezier(0.2, 0.9, 0.4, 1.1), transform 0.7s cubic-bezier(0.2, 0.9, 0.4, 1.1); }
     .scroll-reveal.revealed { opacity: 1; transform: translateY(0); }
   </style>
+  <div style="position:fixed;right:14px;bottom:14px;z-index:40;display:flex;flex-direction:column;gap:8px;">
+    <button class="bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-2 rounded-lg text-white" aria-label="Scroll up" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })">↑</button>
+    <button class="bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-2 rounded-lg text-white" aria-label="Scroll down" onclick="window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })">↓</button>
+  </div>
 </body>
 </html>

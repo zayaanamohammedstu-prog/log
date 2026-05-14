@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LogGuard — Audit Workbench</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body class="workbench-page" data-username="{{ user.username }}" data-role="{{ user.role }}" data-userid="{{ user.id }}">
@@ -40,11 +41,19 @@
 
   <div class="sidebar-section-label">System</div>
   <ul class="sidebar-nav">
+    {% if user.is_super_admin %}
+    <li>
+      <a href="{{ url_for('super_admin') }}"><span class="nav-icon"><i class="fa-solid fa-user-shield"></i></span> Super Admin</a>
+    </li>
+    {% endif %}
     {% if user.is_admin %}
     <li data-tab-link="tab-admin">
       <a href="#" onclick="return false;"><span class="nav-icon">⚙️</span> Admin</a>
     </li>
     {% endif %}
+    <li data-tab-link="tab-guide">
+      <a href="#" onclick="return false;"><span class="nav-icon"><i class="fa-regular fa-circle-question"></i></span> Guide</a>
+    </li>
     <li>
       <a href="#" id="sidebarThemeToggle" onclick="return false;">
         <span class="nav-icon" id="sidebarThemeIcon">🌙</span>
@@ -73,11 +82,6 @@
       <h1 class="topbar-title">IT Audit Anomaly Detection</h1>
     </div>
     <div class="topbar-right">
-      <select class="topbar-select" id="engagementSelect" title="Active Engagement">
-        <option>Engagement 2024-Q4</option>
-        <option>Engagement 2024-Q3</option>
-        <option>New Engagement…</option>
-      </select>
       <input type="text" class="topbar-input" id="dateRangeInput" placeholder="Date range…" title="Date range filter" />
       <input type="text" class="topbar-input topbar-search" id="globalSearch" placeholder="🔍 Search…" title="Search" />
       <button class="theme-toggle" id="themeToggle" title="Toggle light/dark theme">🌙</button>
@@ -101,6 +105,7 @@
       <button class="tab-btn" data-tab="tab-evidence">📋 Evidence &amp; Reports</button>
       <button class="tab-btn" data-tab="tab-export">📤 Export &amp; Visualise</button>
       <button class="tab-btn" data-tab="tab-history">📜 History</button>
+      <button class="tab-btn" data-tab="tab-guide"><i class="fa-regular fa-circle-question"></i> Guide</button>
       {% if user.is_admin %}
       <button class="tab-btn" data-tab="tab-admin">⚙️ Admin</button>
       {% endif %}
@@ -110,6 +115,9 @@
          TAB 1 — OVERVIEW
          ================================================================ -->
     <section class="tab-panel active" id="tab-overview">
+      <div class="admin-info-card" style="margin-bottom:14px;">
+        <strong>New here?</strong> Open the <a href="#" onclick="switchTab('tab-guide');return false;">Quick Guide</a> for role flows, button map, and common actions.
+      </div>
 
       <!-- Upload -->
       <div class="upload-section">
@@ -292,7 +300,8 @@
       <!-- Audit metadata -->
       <div class="audit-summary" id="auditSummaryPanel">
         <div class="audit-summary-row">
-          <div class="audit-summary-label">Engagement</div>
+          <div class="audit-summary-label">Scope</div>
+          <div id="auditScope">Current run</div>
         </div>
         <div class="audit-summary-row">
           <div class="audit-summary-label">Analysis Date</div>
@@ -489,7 +498,7 @@
 
       <div>
         <div class="section-title">📜 Upload History</div>
-        <p class="section-desc">
+        <p class="section-desc" id="historyScopeHint">
           Every file upload is stored individually. Click <strong>Load</strong> to
           restore a past run's results into the dashboard, or <strong>Report</strong>
           to download the HTML audit report for that run.
@@ -519,6 +528,39 @@
         </table>
       </div>
 
+    </section>
+
+    <section class="tab-panel" id="tab-guide">
+      <div>
+        <div class="section-title"><i class="fa-regular fa-circle-question"></i> Quick Guide</div>
+        <p class="section-desc">Concise help for features, destinations, and common actions.</p>
+      </div>
+      <div class="findings-grid">
+        <div class="finding-card">
+          <div class="finding-card-header"><h4>Start a run</h4></div>
+          <ul>
+            <li>Use <strong>Choose File</strong> or <strong>Analyse sample logs</strong>.</li>
+            <li>Open <strong>Anomaly Explorer</strong> for ranked suspicious activity.</li>
+            <li>Use <strong>Evidence &amp; Reports</strong> for controls and findings.</li>
+          </ul>
+        </div>
+        <div class="finding-card">
+          <div class="finding-card-header"><h4>Use history and exports</h4></div>
+          <ul>
+            <li><strong>Upload History</strong> restores previous runs.</li>
+            <li><strong>Export &amp; Visualise</strong> provides CSV/JSON/PDF/HTML outputs.</li>
+            <li>Use <strong>Copy Summary</strong> for a short executive handoff.</li>
+          </ul>
+        </div>
+        <div class="finding-card">
+          <div class="finding-card-header"><h4>Role navigation</h4></div>
+          <ul>
+            <li><strong>Admin</strong>: open user management and ledger controls.</li>
+            <li><strong>Super Admin</strong>: use the sidebar <strong>Super Admin</strong> link.</li>
+            <li>Need help fast? Return to this <strong>Guide</strong> tab.</li>
+          </ul>
+        </div>
+      </div>
     </section>
 
     <!-- ================================================================
@@ -813,7 +855,7 @@
       </section>
       <section class="help-section">
         <h3>Further Documentation</h3>
-        <p>See the <a href="https://github.com/zayaanamohammedstu-prog/log#readme" target="_blank" rel="noopener">README on GitHub</a> for the full API reference, environment variables, Docker deployment guide, and more.</p>
+        <p>See the <a href="https://github.com/zayaanamohammedstu-prog/log#readme" target="_blank" rel="noopener noreferrer">README on GitHub</a> for the full API reference, environment variables, Docker deployment guide, and more.</p>
       </section>
     </div>
     <div class="help-footer">
@@ -822,5 +864,9 @@
   </div>
 </div>
 
+<div style="position:fixed;right:14px;bottom:14px;z-index:40;display:flex;flex-direction:column;gap:8px;">
+  <button class="btn btn-secondary btn-sm" aria-label="Scroll up" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })"><i class="fa-solid fa-chevron-up"></i></button>
+  <button class="btn btn-secondary btn-sm" aria-label="Scroll down" onclick="window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })"><i class="fa-solid fa-chevron-down"></i></button>
+</div>
 </body>
 </html>

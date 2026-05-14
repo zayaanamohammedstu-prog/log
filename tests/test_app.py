@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.app import app
 from app.db import create_user, init_db
+from app.run_store import init_run_store, save_run
 
 
 @pytest.fixture
@@ -299,3 +300,37 @@ class TestRoutes:
         # Runs listing should not include summary_json (too large)
         for run in data["runs"]:
             assert "summary_json" not in run
+
+    def test_auditor_history_lists_only_own_runs(self, tmp_instance, client):
+        """Auditors should only receive their own runs from /api/runs."""
+        init_run_store(tmp_instance)
+        own_id = save_run(tmp_instance, "testuser", "sample", "hash-own", "own.log")
+        save_run(tmp_instance, "otheruser", "sample", "hash-other", "other.log")
+
+        resp = client.get("/api/runs")
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        runs = data.get("runs", [])
+        assert runs
+        assert all(r.get("username") == "testuser" for r in runs)
+        assert any(r.get("id") == own_id for r in runs)
+
+    def test_admin_history_lists_all_runs(self, tmp_instance, client):
+        """Admins should receive all runs from /api/runs."""
+        create_user(tmp_instance, "admin1", "adminpass", role="admin")
+        client.post("/logout", follow_redirects=True)
+        client.post(
+            "/login",
+            data={"username": "admin1", "password": "adminpass"},
+            follow_redirects=True,
+        )
+        init_run_store(tmp_instance)
+        own_id = save_run(tmp_instance, "testuser", "sample", "hash-own", "own.log")
+        other_id = save_run(tmp_instance, "otheruser", "sample", "hash-other", "other.log")
+
+        resp = client.get("/api/runs")
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        run_ids = {r.get("id") for r in data.get("runs", [])}
+        assert own_id in run_ids
+        assert other_id in run_ids

@@ -38,9 +38,12 @@ import sys
 import tempfile
 import traceback
 from datetime import datetime, timedelta, timezone
-from mailer import send_report_email, MailerError
-from reporting import generate_pdf_report  # noqa: E402
- # noqa: E402
+try:
+    from app.mailer import send_report_email, MailerError
+    from app.reporting import generate_pdf_report  # noqa: E402
+except ModuleNotFoundError:  # pragma: no cover - fallback for direct module execution
+    from mailer import send_report_email, MailerError
+    from reporting import generate_pdf_report  # noqa: E402
 import pandas as pd
 from flask import (
     Flask,
@@ -582,6 +585,16 @@ def _signup_allowed() -> bool:
     return count_users(app.instance_path) == 0
 
 
+def _is_auditor_role() -> bool:
+    """Return True when current user is a plain auditor account."""
+    return (getattr(current_user, "role", "") or "").strip().lower() == "auditor"
+
+
+def _run_access_denied(run: dict) -> bool:
+    """Return True when the current user may not access the given run."""
+    return _is_auditor_role() and run.get("username") != current_user.username
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     """Self-service registration.  Only accessible when signup is allowed."""
@@ -595,6 +608,7 @@ def register():
             "register.html",
             error=None,
             signup_disabled=True,
+            signup_env_var="LOGGUARD_ENABLE_PUBLIC_SIGNUP=true",
         ), 403
 
     error = None
@@ -902,8 +916,10 @@ def api_feedback_counts():
 @app.route("/api/runs")
 @login_required
 def api_list_runs():
-    """List all analysis runs, newest first."""
+    """List analysis runs, newest first (auditors only see their own)."""
     runs = list_runs(app.instance_path)
+    if _is_auditor_role():
+        runs = [run for run in runs if run.get("username") == current_user.username]
     return jsonify({"runs": runs})
 
 
@@ -914,6 +930,8 @@ def api_get_run(run_id: int):
     run = get_run(app.instance_path, run_id)
     if run is None:
         return jsonify({"error": "Run not found."}), 404
+    if _run_access_denied(run):
+        return jsonify({"error": "Forbidden."}), 403
     results = get_run_results(app.instance_path, run_id)
     return jsonify({"run": run, "results": results})
 
@@ -922,6 +940,11 @@ def api_get_run(run_id: int):
 @login_required
 def api_get_anomaly(run_id: int, anomaly_id: int):
     """Return a single anomaly result row by its DB id."""
+    run = get_run(app.instance_path, run_id)
+    if run is None:
+        return jsonify({"error": "Run not found."}), 404
+    if _run_access_denied(run):
+        return jsonify({"error": "Forbidden."}), 403
     results = get_run_results(app.instance_path, run_id)
     for r in results:
         if r.get("id") == anomaly_id:
@@ -933,6 +956,11 @@ def api_get_anomaly(run_id: int, anomaly_id: int):
 @login_required
 def api_ip_timeline(run_id: int, ip: str):
     """Return all result rows for a specific IP in a run, ordered by time."""
+    run = get_run(app.instance_path, run_id)
+    if run is None:
+        return jsonify({"error": "Run not found."}), 404
+    if _run_access_denied(run):
+        return jsonify({"error": "Forbidden."}), 403
     results = get_run_results(app.instance_path, run_id)
     timeline = sorted(
         [r for r in results if r.get("ip_address") == ip],
@@ -950,6 +978,8 @@ def api_list_chains(run_id: int):
     run = get_run(app.instance_path, run_id)
     if run is None:
         return jsonify({"error": "Run not found."}), 404
+    if _run_access_denied(run):
+        return jsonify({"error": "Forbidden."}), 403
     chains = get_chains(app.instance_path, run_id)
     return jsonify({"run_id": run_id, "chains": chains})
 
@@ -958,6 +988,11 @@ def api_list_chains(run_id: int):
 @login_required
 def api_get_chain(run_id: int, chain_id: int):
     """Return a single chain by its DB id."""
+    run = get_run(app.instance_path, run_id)
+    if run is None:
+        return jsonify({"error": "Run not found."}), 404
+    if _run_access_denied(run):
+        return jsonify({"error": "Forbidden."}), 403
     chain = get_chain(app.instance_path, run_id, chain_id)
     if chain is None:
         return jsonify({"error": "Chain not found."}), 404
@@ -968,12 +1003,14 @@ def api_get_chain(run_id: int, chain_id: int):
 @login_required
 def api_run_summary(run_id: int):
     """Return the stored analysis summary for a run (for history reload)."""
+    run = get_run(app.instance_path, run_id)
+    if run is None:
+        return jsonify({"error": "Run not found."}), 404
+    if _run_access_denied(run):
+        return jsonify({"error": "Forbidden."}), 403
     summary = get_run_summary(app.instance_path, run_id)
     if summary is None:
         # Run may exist but summary not stored (old run); fall back to metadata only
-        run = get_run(app.instance_path, run_id)
-        if run is None:
-            return jsonify({"error": "Run not found."}), 404
         return jsonify({"error": "Summary not available for this run.", "run": run}), 404
     return jsonify(summary)
 
@@ -985,6 +1022,8 @@ def api_run_report(run_id: int):
     run = get_run(app.instance_path, run_id)
     if run is None:
         return jsonify({"error": "Run not found."}), 404
+    if _run_access_denied(run):
+        return jsonify({"error": "Forbidden."}), 403
     results = get_run_results(app.instance_path, run_id)
     chains = get_chains(app.instance_path, run_id)
     html_report = generate_html_report(run, results, chains)
@@ -1004,6 +1043,8 @@ def api_run_report_pdf(run_id: int):
     run = get_run(app.instance_path, run_id)
     if run is None:
         return jsonify({"error": "Run not found."}), 404
+    if _run_access_denied(run):
+        return jsonify({"error": "Forbidden."}), 403
     results = get_run_results(app.instance_path, run_id)
     chains = get_chains(app.instance_path, run_id)
     try:
@@ -1027,6 +1068,8 @@ def api_send_email(run_id: int):
     run = get_run(app.instance_path, run_id)
     if run is None:
         return jsonify({"error": "Run not found."}), 404
+    if _run_access_denied(run):
+        return jsonify({"error": "Forbidden."}), 403
 
     data = request.get_json(silent=True) or {}
     to_address = (data.get("to") or "").strip()
@@ -1058,6 +1101,8 @@ def api_send_whatsapp(run_id: int):
     run = get_run(app.instance_path, run_id)
     if run is None:
         return jsonify({"error": "Run not found."}), 404
+    if _run_access_denied(run):
+        return jsonify({"error": "Forbidden."}), 403
 
     data = request.get_json(silent=True) or {}
     to_number = (data.get("to") or "").strip()
@@ -1195,6 +1240,23 @@ def export_results(fmt: str):
         if not rows:
             return jsonify({"error": "No row-level results to export."}), 404
         df = pd.DataFrame(rows)
+        preferred = [
+            ("IP", "ip_address"),
+            ("Hour", "hour_bucket"),
+            ("Score", "anomaly_score"),
+            ("ReqHr", "requests_per_hour"),
+            ("ErrRate", "error_rate"),
+            ("Endpoints", "unique_endpoints"),
+            ("PostRatio", "post_ratio"),
+            ("OffHours", "is_off_hours"),
+            ("ScannerUA", "has_scanner_ua"),
+            ("Risk", "risk_level"),
+        ]
+        available = [(short, key) for short, key in preferred if key in df.columns]
+        if available:
+            df = df[[key for _, key in available]].rename(
+                columns={key: short for short, key in available}
+            )
         csv_data = df.to_csv(index=False)
         return Response(
             csv_data,

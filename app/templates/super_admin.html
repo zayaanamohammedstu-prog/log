@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LogGuard — Super Admin</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen flex">
@@ -306,5 +307,9 @@ async function deleteUser(id) {
 
 showTab('dashboard');
 </script>
+<div class="fixed right-4 bottom-4 z-40 flex flex-col gap-2">
+  <button class="bg-gray-800/80 border border-gray-700 hover:border-gray-500 px-3 py-2 rounded-lg text-gray-200" aria-label="Scroll up" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })"><i class="fas fa-chevron-up"></i></button>
+  <button class="bg-gray-800/80 border border-gray-700 hover:border-gray-500 px-3 py-2 rounded-lg text-gray-200" aria-label="Scroll down" onclick="window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })"><i class="fas fa-chevron-down"></i></button>
+</div>
 </body>
 </html>
