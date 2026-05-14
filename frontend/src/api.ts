@@ -41,8 +41,8 @@ export const getHtmlReport = (id: number) =>
 export const exportCsv = (id?: number) =>
   id ? `${BASE}/runs/${id}/export/csv` : `${BASE}/export/csv`
 
-export const sendEmail = (runId: number, to: string) =>
-  axios.post(`${BASE}/runs/${runId}/send/email`, { to }).then(r => r.data)
+export const sendEmail = (runId: number, to: string, format: 'pdf' | 'html' | 'csv' | 'json' = 'pdf') =>
+  axios.post(`${BASE}/runs/${runId}/send/email`, { to, format }).then(r => r.data)
 
 export const sendWhatsApp = (runId: number, to: string) =>
   axios.post(`${BASE}/runs/${runId}/send/whatsapp`, { to }).then(r => r.data)

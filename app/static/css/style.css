@@ -1131,7 +1131,7 @@ td.placeholder { text-align: center; color: var(--text-muted); padding: 40px; }
   line-height: 1.5;
 }
 
-.send-modal-body .form-group { margin-bottom: 0; }
+.send-modal-body .form-group { margin-bottom: 10px; }
 .send-modal-body label {
   display: block;
   font-size: .82rem;

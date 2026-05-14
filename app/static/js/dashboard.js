@@ -1691,17 +1691,20 @@ function openSendModal(mode) {
   const input     = document.getElementById("sendModalRecipient");
   const status    = document.getElementById("sendModalStatus");
   const submitBtn = document.getElementById("sendModalSubmit");
+  const formatSel = document.getElementById("sendModalFormat");
+  const formatGrp = document.getElementById("sendModalFormatGroup");
 
   if (!overlay) return;
 
   if (mode === "email") {
     title.textContent = "✉️ Send Report via Email";
-    desc.textContent  = "Enter the recipient's email address. The PDF report will be attached and sent from the configured SMTP server.";
+    desc.textContent  = "Enter the recipient's email address and choose the attachment format.";
     label.textContent = "Recipient email address";
     input.type        = "email";
     input.placeholder = "colleague@example.com";
     submitBtn.className = "btn btn-primary";
     submitBtn.textContent = "Send Email";
+    if (formatGrp) formatGrp.style.display = "";
   } else {
     title.textContent = "💬 Send Report via WhatsApp";
     desc.textContent  = "Enter the recipient's phone number in international format (e.g. +447911123456). The PDF will be sent via the Meta WhatsApp Business Cloud API.";
@@ -1710,9 +1713,11 @@ function openSendModal(mode) {
     input.placeholder = "+447911123456";
     submitBtn.className = "btn btn-success";
     submitBtn.textContent = "Send WhatsApp";
+    if (formatGrp) formatGrp.style.display = "none";
   }
 
   input.value = "";
+  if (formatSel) formatSel.value = "pdf";
   status.textContent = "";
   status.className = "send-modal-status hidden";
   overlay.classList.add("open");
@@ -1728,6 +1733,7 @@ async function submitSendModal() {
   const input     = document.getElementById("sendModalRecipient");
   const status    = document.getElementById("sendModalStatus");
   const submitBtn = document.getElementById("sendModalSubmit");
+  const formatSel = document.getElementById("sendModalFormat");
   if (!input || !status) return;
 
   const recipient = input.value.trim();
@@ -1739,6 +1745,7 @@ async function submitSendModal() {
   const endpoint = _sendModalMode === "email"
     ? `/api/runs/${_lastRunId}/send/email`
     : `/api/runs/${_lastRunId}/send/whatsapp`;
+  const selectedFormat = formatSel ? formatSel.value : "pdf";
 
   submitBtn.disabled = true;
   submitBtn.textContent = "Sending…";
@@ -1748,7 +1755,11 @@ async function submitSendModal() {
     const resp = await apiFetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: recipient }),
+      body: JSON.stringify(
+        _sendModalMode === "email"
+          ? { to: recipient, format: selectedFormat }
+          : { to: recipient }
+      ),
     });
     const data = resp ? await resp.json() : null;
     if (resp && resp.ok && data && data.ok) {
