@@ -1783,7 +1783,9 @@ function closeWelcomeModal() {
   const checkbox = document.getElementById("welcomeDontShow");
   if (overlay) overlay.classList.remove("open");
   if (checkbox && checkbox.checked) {
-    try { localStorage.setItem(getWelcomedKey(), "1"); } catch (_) {}
+    try { localStorage.setItem(getWelcomedKey(), "1"); } catch (e) {
+      console.warn("LogGuard: could not save welcome-seen state to localStorage – the welcome modal may appear again next visit.", e);
+    }
   }
 }
 
@@ -1792,7 +1794,8 @@ function maybeShowWelcome() {
     if (!localStorage.getItem(getWelcomedKey())) {
       openWelcomeModal();
     }
-  } catch (_) {
+  } catch (e) {
+    console.warn("LogGuard: localStorage is unavailable – showing welcome modal by default.", e);
     openWelcomeModal();
   }
 }
